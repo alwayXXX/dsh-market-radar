@@ -2,10 +2,9 @@
 
 A compact gold, A-share and US-stock watchlist for the official DeepSeek Harness desktop app. A 28px ticker opens a watchlist with intraday charts, threshold alerts and user-reviewed quote snapshots that can be inserted into the current conversation draft.
 
-Target runtime: **DSH 0.2.2-rc.3**, Node.js >=24.9.0. Install from npm with the bundled desktop CLI (`plugin --profile desktop add dsh-market-radar@0.1.1`), or use a prebuilt `.tgz` from GitHub Releases, then reload.
+Target runtime: **DSH 0.2.2-rc.3**, Node.js >=24.9.0. Install from npm with the bundled desktop CLI (`plugin --profile desktop add dsh-market-radar@0.1.2`), or use a prebuilt `.tgz` from GitHub Releases, then reload.
 
 Fully quit the desktop app, including its tray process, before installing through its CLI. The hide shortcut is registered in the native DSH catalog: Ctrl+Shift+F9 on Windows and Command+Shift+F9 on macOS. A Windows user confirmed that Ctrl+Shift+F9 hides and restores the ticker.
-
 
 - Pin up to three instruments. Add explicit A-share exchange prefixes (`sh600519`, `sz000001`) and US tickers (`AAPL`, `VOO`).
 - Gold quotes keep XAU in USD/troy ounce and Au99.99 in CNY/gram separate.
@@ -17,6 +16,10 @@ Fully quit the desktop app, including its tray process, before installing throug
 - Settings are local and profile-specific. Monitoring requires a running DSH process and an awake computer.
 
 Free upstream feeds can be delayed, unavailable or change format. Recurring trading hours do not cover every holiday or exceptional closure. Windows desktop validation and remaining limitations are recorded in [docs/VALIDATION.md](docs/VALIDATION.md).
+
+## Disclaimer
+
+This plugin is for personal market information only and does not constitute investment or trading advice, or a promise of returns. Third-party data may be delayed, incorrect, interrupted or missing; alerts may be delayed or fail because of network, device, software or data-source issues. Accuracy, completeness and timeliness are not guaranteed. Refer to the exchange and relevant service providers for authoritative information. Users make their own investment decisions and bear the associated risks.
 
 Development: `pnpm install`, `pnpm check`, `pnpm smoke:live`, `pnpm smoke:package`, `pnpm dev`. The development fixture at `http://127.0.0.1:4188` is not the real DSH UI.
 

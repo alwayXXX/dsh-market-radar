@@ -19,13 +19,12 @@
 
 首个兼容目标为 **DSH 0.2.2-rc.3**，Node.js >=24.9.0。可从 npm 或 GitHub Release 安装预构建包。
 
-
 在官方桌面端的 Plugins 页面选择本地安装包，或使用桌面端自带 CLI：
 
 使用 CLI 前先完整退出桌面 App（包括托盘进程），让宿主释放 `desktop` profile；安装完成后重新打开 App。
 
 ```powershell
-& '你的安装目录\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add 'dsh-market-radar@0.1.1'
+& '你的安装目录\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add 'dsh-market-radar@0.1.2'
 ```
 
 也可从 [GitHub Release](https://github.com/alwayXXX/dsh-market-radar/releases) 下载 `.tgz`，将上述包名替换为安装包绝对路径。桌面端的 `desktop` profile 由 App 管理，使用桌面端自带 CLI。浏览器版使用其对应 CLI 和 `web` profile。安装后重新加载界面。
@@ -65,6 +64,10 @@
 **Au99.99 暂无首版历史分时接入**，使用运行期间收集的有效报价采样，界面标注为非完整交易日。首次安装遇到休市可能暂时没有采样走势。XAU 或股票历史接口失败时同样回退采样，不补造数据。
 
 自选、提醒和显示设置按 profile 保存在本机插件私有目录，导出 JSON 包含这些设置。行情快照只在点击放入草稿后进入当前对话；用户发送后按 DSH 当前模型配置处理。
+
+## 免责声明
+
+本插件仅供个人查看行情和信息参考，不构成投资建议、交易建议或收益承诺。行情由第三方提供，可能存在延迟、错误、中断或缺失；提醒也可能因网络、设备休眠、软件故障或数据源问题而延迟或未触发。本插件不保证数据和提醒的准确性、完整性或实时性，请以交易所及相关服务机构的信息为准。投资决策由使用者独立作出，并自行承担相应风险。
 
 ## 开发
 
