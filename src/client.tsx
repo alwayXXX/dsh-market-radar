@@ -1,0 +1,274 @@
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react'
+import { RadarController } from './controller.ts'
+import { exportConfig, GOLD, validateConfig } from './config.ts'
+import { PriceChart } from './chart.tsx'
+import { insertSnapshot } from './draft.ts'
+import { formatPercent, formatPrice, snapshotText, STATUS_LABEL } from './snapshot.ts'
+import type { InputActions, ClientContext } from './host-types.ts'
+import type { Instrument, Market, PriceSeries, Quote, RadarApi, RadarConfig } from './types.ts'
+import styles from './styles.css'
+
+export const name = 'dsh-market-radar-client'
+export const inject = ['slots', 'connection', 'shortcuts']
+const MARKET_LABEL = { gold: '黄金', cn: 'A 股', us: '美股' }
+function Icon({ name = 'radar', size = 16 }: { name?: string; size?: number }) {
+  const paths: Record<string, ReactNode> = {
+    radar: <><path d="M3 17 8 11l4 3 8-10"/><path d="M3 4v16h18"/></>,
+    close: <path d="m6 6 12 12M6 18 18 6"/>, plus: <path d="M12 5v14M5 12h14"/>,
+    refresh: <><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 11-2l3 3M4 16l3 3a7 7 0 0 0 11-2"/></>,
+    hide: <><path d="m3 3 18 18M10 5c6-1 10 7 10 7a17 17 0 0 1-3 4M6 6a17 17 0 0 0-4 6s4 8 10 7a10 10 0 0 0 3-1"/><path d="M9 9a4 4 0 0 0 6 6"/></>,
+    bell: <><path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9ZM10 21h4"/></>,
+    settings: <><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></>,
+    pin: <><path d="m8 3 8 0-1 5 4 5H5l4-5-1-5ZM12 13v8"/></>,
+    back: <path d="m14 5-7 7 7 7"/>, up: <path d="m6 14 6-6 6 6"/>, down: <path d="m6 10 6 6 6-6"/>,
+    trash: <><path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/></>,
+    chat: <path d="M4 4h16v12H9l-5 4V4Z"/>, arrow: <path d="m9 5 7 7-7 7"/>,
+    download: <><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></>,
+    upload: <><path d="M12 15V3m-5 5 5-5 5 5M4 16v5h16v-5"/></>,
+  }
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.radar}</svg>
+}
+function useRadar(radar: RadarController) { return useSyncExternalStore(radar.subscribe, radar.getSnapshot) }
+function IconButton({ icon, label, onClick, disabled, active }: { icon: string; label: string; onClick: () => void; disabled?: boolean; active?: boolean }) {
+  return <button type="button" className={`mr-icon-button ${active ? 'mr-active' : ''}`} aria-label={label} title={label} disabled={disabled} onClick={onClick}><Icon name={icon}/></button>
+}
+function Change({ quote }: { quote?: Quote }) { return <span className={`mr-change ${(quote?.changePercent ?? 0) >= 0 ? 'mr-up' : 'mr-down'}`}>{formatPercent(quote?.changePercent)}</span> }
+
+function BottomBar({ radar }: { radar: RadarController }) {
+  const state = useRadar(radar)
+  useEffect(() => { radar.patch({ bottomMounted: true }); return () => { radar.patch({ bottomMounted: false }) } }, [radar])
+  if (radar.hidden) return null
+  const { config, quotes } = state.snapshot
+  return <div className="mr-root mr-bar" data-market-radar="" data-colors={config.colorMode}>
+    <button className="mr-brand-button" onClick={() => radar.setOpen(!state.open)} title="打开行情雷达"><Icon size={14}/><span>行情雷达</span></button>
+    <div className="mr-tickers">
+      {config.pinned.map(id => {
+        const i = config.instruments.find(i => i.id === id)
+        if (!i) return null
+        const q = quotes[id]
+        return <button className="mr-ticker" key={id} onClick={() => { window.dispatchEvent(new CustomEvent('market-radar-select', { detail: id })); radar.setOpen(true) }} title={`${i.name} · ${q ? STATUS_LABEL[q.status] : '等待报价'}`}>
+          <span className="mr-ticker-name">{i.market === 'gold' ? i.symbol : i.name}</span><strong>{formatPrice(q?.price)}</strong><Change quote={q}/>{q && q.status !== 'live' && <span className="mr-stale-dot" aria-label={STATUS_LABEL[q.status]}/>}
+        </button>
+      })}
+      {!config.pinned.length && <button className="mr-ticker" onClick={() => radar.setOpen(true)}>添加重点自选</button>}
+    </div>
+    <span className={`mr-connection-dot ${state.connected ? 'mr-online' : ''}`} title={state.connected ? '行情服务已连接' : '正在连接行情服务'}/>
+    {state.snapshot.alerts.length > 0 && <button className="mr-alert-count" title="查看提醒" onClick={() => radar.setOpen(true)}><Icon name="bell" size={12}/>{state.snapshot.alerts.length}</button>}
+    <button className="mr-bar-hide" title="隐藏行情并静音（Ctrl/⌘+Shift+F9 恢复）" aria-label="隐藏行情并静音" onClick={() => { void radar.toggleHidden() }}><Icon name="hide" size={13}/></button>
+  </div>
+}
+function AddInstrument({ radar, done }: { radar: RadarController; done: () => void }) {
+  const state = useRadar(radar)
+  const [market, setMarket] = useState<Market>('cn')
+  const [symbol, setSymbol] = useState('')
+  const [candidate, setCandidate] = useState<Instrument | null>(null)
+  const [finding, setFinding] = useState(false)
+  const [error, setError] = useState('')
+  async function find(e: FormEvent) {
+    e.preventDefault(); setError(''); setCandidate(null); setFinding(true)
+    try { setCandidate(await radar.api.resolve(market, symbol)) }
+    catch (e) { setError(e instanceof Error ? e.message : '查询失败') }
+    finally { setFinding(false) }
+  }
+  return <section className="mr-section"><h3>添加自选</h3><p className="mr-muted">核对市场与标的名称后，加入你的自选。</p>
+    <form onSubmit={e => { void find(e) }}>
+      <label>市场<select value={market} onChange={e => { setMarket(e.target.value as Market); setCandidate(null); setSymbol('') }}>{Object.entries(MARKET_LABEL).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+      <label>代码{market === 'gold' ? <select value={symbol} onChange={e => { setSymbol(e.target.value); setCandidate(null) }}><option value="">请选择黄金报价</option>{GOLD.map(i => <option key={i.id} value={i.symbol}>{i.name} · {i.symbol}</option>)}</select> : <input autoFocus value={symbol} placeholder={market === 'cn' ? 'sh600519 / sz000001 / sh510300' : 'AAPL / VOO / QQQM / .INX'} maxLength={20} onChange={e => { setSymbol(e.target.value); setCandidate(null) }}/>}</label>
+      {market === 'cn' && <p className="mr-muted">sh000001 是上证指数，sz000001 是平安银行，请带交易所前缀。</p>}
+      <button className="mr-button mr-primary" disabled={!symbol.trim() || finding || !state.connected}>{finding ? '正在查找…' : '查找标的'}</button>
+    </form>
+    {error && <p className="mr-error" role="alert">{error}</p>}
+    {candidate && <div className="mr-candidate"><div><strong>{candidate.name}</strong><span>{MARKET_LABEL[candidate.market]} · {candidate.symbol} · {candidate.currency}/{candidate.unit}</span></div><button className="mr-button mr-primary" disabled={state.busy || state.snapshot.config.instruments.some(i => i.id === candidate.id)} onClick={() => {
+      void radar.save(c => { if (c.instruments.some(i => i.id === candidate.id)) throw new Error('该标的已在自选中'); c.instruments.push(candidate); if (c.pinned.length < 3) c.pinned.push(candidate.id) }).then(() => { done(); void radar.refresh() }).catch(() => {})
+    }}>{state.snapshot.config.instruments.some(i => i.id === candidate.id) ? '已在自选' : '确认添加'}</button></div>}
+  </section>
+}
+function Rules({ radar, instrumentId }: { radar: RadarController; instrumentId?: string }) {
+  const state = useRadar(radar)
+  const config = state.snapshot.config
+  const [id, setId] = useState(instrumentId ?? config.instruments[0]?.id ?? '')
+  const [kind, setKind] = useState<'above' | 'below' | 'move'>('above')
+  const [value, setValue] = useState('')
+  const [cooldown, setCooldown] = useState('15')
+  const [error, setError] = useState('')
+  const rules = config.alerts.filter(a => !instrumentId || a.instrumentId === instrumentId)
+  return <section className="mr-section"><h3>提醒规则</h3><p className="mr-muted">以最新有效报价判断；先建立基线，再在穿越阈值时提醒。隐藏模式下静音。</p>
+    <form onSubmit={e => {
+      e.preventDefault(); setError('')
+      if (!Number.isFinite(Number(value)) || Number(value) <= 0 || !Number.isInteger(Number(cooldown)) || Number(cooldown) < 1 || Number(cooldown) > 1440) { setError('请输入正数阈值及 1–1440 分钟冷却时间'); return }
+      void radar.save(c => c.alerts.push({ id: crypto.randomUUID(), instrumentId: id, kind, value: Number(value), cooldownMinutes: Number(cooldown), enabled: true })).then(() => setValue('')).catch(() => {})
+    }}>
+      <label>标的<select value={id} onChange={e => setId(e.target.value)}>{config.instruments.map(i => <option key={i.id} value={i.id}>{i.name} · {i.symbol}</option>)}</select></label>
+      <div className="mr-form-row"><label>条件<select value={kind} onChange={e => setKind(e.target.value as typeof kind)}><option value="above">价格高于或等于</option><option value="below">价格低于或等于</option><option value="move">当日涨跌幅绝对值达到</option></select></label><label>阈值{kind === 'move' ? '（%）' : ''}<input type="number" min="0" step="any" value={value} onChange={e => setValue(e.target.value)} placeholder={kind === 'move' ? '3' : '目标价格'} required/></label></div>
+      <label>冷却时间（分钟）<input type="number" min="1" max="1440" value={cooldown} onChange={e => setCooldown(e.target.value)} required/></label>
+      <button className="mr-button mr-primary" disabled={state.busy || !id || !value || !state.connected}>添加提醒</button>
+    </form>
+    {error && <p className="mr-error">{error}</p>}
+    <div className="mr-rule-list">{rules.map(rule => <div className="mr-rule" key={rule.id}><label className="mr-switch"><input type="checkbox" checked={rule.enabled} disabled={state.busy} onChange={e => { const enabled = e.target.checked; void radar.save(c => { c.alerts.find(a => a.id === rule.id)!.enabled = enabled }).catch(() => {}) }}/><span><strong>{config.instruments.find(i => i.id === rule.instrumentId)?.name}</strong><small>{rule.kind === 'above' ? '价格 ≥' : rule.kind === 'below' ? '价格 ≤' : '|当日涨跌幅| ≥'} {rule.value}{rule.kind === 'move' ? '%' : ''} · 冷却 {rule.cooldownMinutes} 分钟</small></span></label><IconButton icon="trash" label="删除提醒" disabled={state.busy} onClick={() => { void radar.save(c => { c.alerts = c.alerts.filter(a => a.id !== rule.id) }).catch(() => {}) }}/></div>)}{!rules.length && <p className="mr-empty-small">尚未设置提醒</p>}</div>
+    {!instrumentId && state.snapshot.alerts.length > 0 && <><h3 className="mr-spaced">最近提醒</h3>{state.snapshot.alerts.map(a => <div className="mr-alert-item" key={a.id}><span>{a.text}</span><small>{new Date(a.at).toLocaleTimeString('zh-CN', { hour12: false })}</small></div>)}</>}
+  </section>
+}
+function Settings({ radar }: { radar: RadarController }) {
+  const state = useRadar(radar)
+  const [pending, setPending] = useState<RadarConfig | null>(null)
+  const [error, setError] = useState('')
+  const input = useRef<HTMLInputElement>(null)
+  return <section className="mr-section"><h3>显示与备份</h3>
+    <label>涨跌颜色<select value={state.snapshot.config.colorMode} disabled={state.busy} onChange={e => { const colorMode = e.target.value as RadarConfig['colorMode']; void radar.save(c => { c.colorMode = colorMode }).catch(() => {}) }}><option value="red-up">红涨绿跌</option><option value="green-up">绿涨红跌</option></select></label>
+    <div className="mr-setting-note"><Icon name="hide"/><div><strong>一键隐藏并静音</strong><p>Ctrl / ⌘ + Shift + F9 隐藏或恢复，仅在 DSH 窗口获得焦点时生效。</p></div></div>
+    <p className="mr-muted">可在宿主的快捷键设置中查找“行情雷达：隐藏或恢复”并修改绑定；macOS 默认为 Command + Shift + F9。</p>
+    <div className="mr-button-row"><button className="mr-button" onClick={() => {
+      const url = URL.createObjectURL(new Blob([exportConfig(state.snapshot.config)], { type: 'application/json' }))
+      const link = document.createElement('a'); link.href = url; link.download = `dsh-market-radar-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
+    }}><Icon name="download"/>导出配置</button><button className="mr-button" onClick={() => input.current?.click()}><Icon name="upload"/>导入配置</button></div>
+    <input hidden ref={input} type="file" accept=".json,application/json" onChange={e => {
+      const file = e.target.files?.[0]; e.target.value = ''; if (!file) return
+      setPending(null); setError('')
+      if (file.size > 1_000_000) { setError('配置文件过大'); return }
+      void file.text().then(text => setPending(validateConfig(JSON.parse(text)))).catch(e => setError(e instanceof Error ? e.message : '无法读取配置文件'))
+    }}/>
+    {pending && <div className="mr-import-preview"><strong>确认替换当前配置</strong><p>{pending.instruments.length} 个自选 · {pending.alerts.length} 条提醒。保留当前隐藏状态。</p><div className="mr-button-row"><button className="mr-button" onClick={() => setPending(null)}>取消</button><button className="mr-button mr-primary" disabled={state.busy} onClick={() => { void radar.save(c => { Object.assign(c, pending, { revision: c.revision, hidden: c.hidden }) }).then(() => { setPending(null); radar.notify('配置已导入'); void radar.refresh() }).catch(() => {}) }}>确认导入</button></div></div>}
+    {error && <p className="mr-error" role="alert">{error}</p>}
+    <div className="mr-source-note"><h3>数据与运行</h3><p>股票行情来自腾讯财经，黄金行情来自新浪财经。报价时间由数据源提供，免费数据可能存在延迟或暂时不可用。</p><p>监测在 DSH 运行且电脑保持唤醒时进行。自选和提醒保存在本机当前 profile。</p><p>首版使用常规交易时段判断休市，节假日及临时休市可能显示为“报价已延迟”。</p></div>
+  </section>
+}
+function InstrumentDetail({ radar, instrument, onBack, onRules }: { radar: RadarController; instrument: Instrument; onBack: () => void; onRules: () => void }) {
+  const state = useRadar(radar)
+  const [series, setSeries] = useState<PriceSeries | null>(null)
+  const [error, setError] = useState('')
+  const [preview, setPreview] = useState('')
+  useEffect(() => {
+    let stopped = false
+    let timer: ReturnType<typeof setTimeout>
+    setSeries(null); setError(''); setPreview('')
+    async function update() {
+      try { const value = await radar.api.series(instrument.id); if (!stopped) { setSeries(value); setError('') } }
+      catch (e) { if (!stopped) setError(e instanceof Error ? e.message : '走势暂不可用') }
+      if (!stopped) timer = setTimeout(() => { void update() }, 30_000)
+    }
+    void update()
+    return () => { stopped = true; clearTimeout(timer) }
+  }, [radar, instrument.id])
+  const quote = state.snapshot.quotes[instrument.id]
+  return <section className="mr-detail"><button className="mr-text-button mr-back" onClick={onBack}><Icon name="back"/>返回自选</button>
+    <div className="mr-detail-heading"><div><span className={`mr-market-tag mr-tag-${instrument.market}`}>{MARKET_LABEL[instrument.market]}</span><h3>{quote?.instrument.name ?? instrument.name}</h3><p>{instrument.symbol} · {instrument.currency}/{instrument.unit}</p></div><IconButton icon="bell" label="设置此标的提醒" onClick={onRules}/></div>
+    <div className="mr-detail-price"><strong>{formatPrice(quote?.price)}</strong><Change quote={quote}/></div>
+    <div className="mr-detail-status"><span className={`mr-status mr-status-${quote?.status ?? 'unknown'}`}>{quote ? STATUS_LABEL[quote.status] : '等待报价'}</span>{quote?.asOf && <span>{new Date(quote.asOf).toLocaleString('zh-CN', { hour12: false })}</span>}</div>
+    {state.snapshot.errors?.[instrument.id] && <p className="mr-error">{state.snapshot.errors[instrument.id]}</p>}
+    <div className="mr-chart-title"><h4>价格走势</h4><span>{instrument.market === 'us' ? '纽约时间' : '北京时间'}</span></div>
+    {series ? <PriceChart series={series} instrument={instrument}/> : <div className="mr-chart-empty">{error || '正在读取走势…'}</div>}
+    <div className="mr-detail-data"><div><span>昨收</span><strong>{formatPrice(quote?.previousClose ?? undefined)}</strong></div><div><span>涨跌额</span><strong>{quote?.change == null ? '—' : `${quote.change >= 0 ? '+' : ''}${formatPrice(quote.change)}`}</strong></div><div><span>来源</span><strong>{quote?.source ?? '—'}</strong></div></div>
+    <button className="mr-button mr-primary mr-full" disabled={!quote} onClick={() => { if (quote) setPreview(snapshotText([quote])) }}><Icon name="chat"/>准备行情快照</button>
+    {preview && <div className="mr-snapshot-preview"><h4>放入对话前预览</h4><pre>{preview}</pre><p className="mr-muted">加入草稿后由你发送，已有文字和附件会保留。</p><div className="mr-button-row"><button className="mr-button" onClick={() => setPreview('')}>取消</button><button className="mr-button mr-primary" disabled={!state.draftReady} onClick={() => {
+      if (radar.insertDraft(preview)) { setPreview(''); radar.notify('已放入当前对话草稿') }
+      else radar.patch({ error: '当前对话暂不能编辑，请返回对话后重试。' })
+    }}>放入对话</button></div>{!state.draftReady && <p className="mr-muted">请先打开一个可编辑的 DSH 对话。</p>}</div>}
+  </section>
+}
+function Dashboard({ radar }: { radar: RadarController }) {
+  const state = useRadar(radar)
+  const [tab, setTab] = useState<'all' | Market>('all')
+  const [page, setPage] = useState<'list' | 'add' | 'rules' | 'settings'>('list')
+  const [selected, setSelected] = useState<string | null>(null)
+  const panel = useRef<HTMLElement>(null)
+  const rulesFor = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    const select = (e: Event) => { setSelected((e as CustomEvent<string>).detail); setPage('list') }
+    window.addEventListener('market-radar-select', select)
+    return () => window.removeEventListener('market-radar-select', select)
+  }, [])
+  useEffect(() => {
+    if (!state.open || radar.hidden) return
+    const outside = (e: PointerEvent) => {
+      const target = e.target
+      if (target instanceof Element && !target.closest('[data-market-radar]')) radar.setOpen(false)
+    }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented && !(e.target instanceof Element && e.target.closest('[role="dialog"]:not(.mr-panel)'))) { e.preventDefault(); radar.setOpen(false) } }
+    document.addEventListener('pointerdown', outside); document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', esc) }
+  }, [state.open, radar])
+  const config = state.snapshot.config
+  const instrument = config.instruments.find(i => i.id === selected)
+  const list = config.instruments.filter(i => tab === 'all' || i.market === tab)
+  if (radar.hidden) return null
+  return <div className="mr-root mr-overlay" data-market-radar="" data-colors={config.colorMode}>
+    {!state.bottomMounted && state.connected && <button className="mr-fallback" title="打开行情雷达" onClick={() => radar.setOpen(!state.open)}><Icon/><span>行情</span></button>}
+    {state.open && <aside className="mr-panel" ref={panel} role="dialog" aria-modal="false" aria-label="行情雷达">
+      <header className="mr-header"><div className="mr-header-title"><span className="mr-logo"><Icon size={20}/></span><div><h2>行情雷达</h2><p>黄金 · A 股 · 美股</p></div></div><div className="mr-header-actions"><IconButton icon="refresh" label="刷新行情" disabled={state.busy} onClick={() => { void radar.refresh() }}/><IconButton icon="hide" label="隐藏行情并静音（Ctrl/⌘+Shift+F9 恢复）" onClick={() => { void radar.toggleHidden() }}/><IconButton icon="close" label="关闭看板" onClick={() => radar.setOpen(false)}/></div></header>
+      <nav className="mr-navigation" aria-label="看板页面"><button className={page === 'list' ? 'mr-selected' : ''} onClick={() => { setPage('list'); setSelected(null) }}>自选行情</button><button className={page === 'rules' ? 'mr-selected' : ''} onClick={() => { rulesFor.current = undefined; setPage('rules') }}><Icon name="bell" size={14}/>提醒{config.alerts.some(a => a.enabled) && <span className="mr-nav-count">{config.alerts.filter(a => a.enabled).length}</span>}</button><button className={page === 'settings' ? 'mr-selected' : ''} onClick={() => setPage('settings')}><Icon name="settings" size={14}/>设置</button></nav>
+      {(state.error || state.snapshot.storageError || !state.connected) && <div className="mr-banner" role="status">{state.error || state.snapshot.storageError || '正在连接行情服务…'}</div>}
+      {state.notice && <div className="mr-success" role="status">{state.notice}</div>}
+      <div className="mr-panel-scroll">
+        {page === 'add' ? <AddInstrument radar={radar} done={() => { setPage('list'); setSelected(null) }}/> : page === 'settings' ? <Settings radar={radar}/> : page === 'rules' ? <Rules key={rulesFor.current ?? 'all'} radar={radar} instrumentId={rulesFor.current}/> : instrument ? <InstrumentDetail key={instrument.id} radar={radar} instrument={instrument} onBack={() => setSelected(null)} onRules={() => { rulesFor.current = instrument.id; setPage('rules') }}/> : <>
+          <div className="mr-list-toolbar"><div className="mr-market-tabs" role="tablist" aria-label="市场筛选">{(['all', 'gold', 'cn', 'us'] as const).map(id => <button role="tab" aria-selected={tab === id} key={id} className={tab === id ? 'mr-selected' : ''} onClick={() => setTab(id)}>{id === 'all' ? '全部' : MARKET_LABEL[id]}</button>)}</div><IconButton icon="plus" label="添加自选" onClick={() => setPage('add')}/></div>
+          <div className="mr-list-columns"><span>标的 / 代码</span><span>价格 / 涨跌幅</span></div>
+          <div className="mr-watchlist">{list.map(i => {
+            const quote = state.snapshot.quotes[i.id]
+            const pinned = config.pinned.includes(i.id)
+            return <div className="mr-quote-row" key={i.id}><button className="mr-quote-main" onClick={() => setSelected(i.id)}><div className="mr-quote-label"><span className={`mr-market-letter mr-tag-${i.market}`}>{i.market === 'gold' ? '金' : i.market === 'cn' ? 'A' : 'US'}</span><div><strong>{quote?.instrument.name ?? i.name}</strong><span>{i.symbol}<span className="mr-inline-dot">·</span>{quote ? STATUS_LABEL[quote.status] : state.snapshot.errors?.[i.id] ? '连接失败' : '等待报价'}</span></div></div><div className="mr-quote-value"><strong>{formatPrice(quote?.price)}</strong><Change quote={quote}/></div></button><IconButton icon="pin" label={pinned ? `取消固定 ${i.name}` : `固定 ${i.name} 到行情条`} active={pinned} disabled={state.busy} onClick={() => {
+              void radar.save(c => { if (pinned) c.pinned = c.pinned.filter(id => id !== i.id); else { if (c.pinned.length >= 3) throw new Error('行情条已固定三只标的，请先取消一只'); c.pinned.push(i.id) } }).catch(() => {})
+            }}/><details className="mr-row-menu"><summary aria-label={`管理 ${i.name}`}>···</summary><div><button disabled={state.busy || config.instruments[0]?.id === i.id} onClick={() => { void radar.save(c => { const at = c.instruments.findIndex(v => v.id === i.id); [c.instruments[at - 1], c.instruments[at]] = [c.instruments[at], c.instruments[at - 1]] }).catch(() => {}) }}>上移</button><button disabled={state.busy || config.instruments.at(-1)?.id === i.id} onClick={() => { void radar.save(c => { const at = c.instruments.findIndex(v => v.id === i.id); [c.instruments[at], c.instruments[at + 1]] = [c.instruments[at + 1], c.instruments[at]] }).catch(() => {}) }}>下移</button><button onClick={() => { rulesFor.current = i.id; setPage('rules') }}>设置提醒</button><button className="mr-danger-text" disabled={state.busy} onClick={() => { void radar.save(c => { c.instruments = c.instruments.filter(v => v.id !== i.id); c.pinned = c.pinned.filter(id => id !== i.id); c.alerts = c.alerts.filter(a => a.instrumentId !== i.id) }).catch(() => {}) }}>移出自选</button></div></details></div>
+          })}</div>
+          {!list.length && <div className="mr-empty"><Icon size={30}/><h3>这里还没有自选</h3><p>添加你关注的标的，价格就在手边。</p><button className="mr-button mr-primary" onClick={() => setPage('add')}><Icon name="plus"/>添加自选</button></div>}
+          <button className="mr-add-row" onClick={() => setPage('add')}><Icon name="plus"/>添加自选标的</button>
+          <div className="mr-list-tip"><Icon name="pin" size={13}/><span>固定最多三只到行情条，点击任意标的查看走势。</span></div>
+          {state.snapshot.alerts[0] && <button className="mr-latest-alert" onClick={() => { rulesFor.current = undefined; setPage('rules') }}><Icon name="bell"/><span>{state.snapshot.alerts[0].text}</span><Icon name="arrow"/></button>}
+        </>}
+      </div>
+      <footer className="mr-footer"><span><i className={`mr-connection-dot ${state.connected ? 'mr-online' : ''}`}/>{state.connected ? '本地行情服务已连接' : '行情服务未连接'}</span><span>Ctrl / ⌘ + Shift + F9 隐藏</span></footer>
+    </aside>}
+  </div>
+}
+function DraftBridge({ radar, inputActions }: { radar: RadarController; inputActions: InputActions }) {
+  useEffect(() => radar.setDraftWriter(text => insertSnapshot(inputActions, text)), [radar, inputActions])
+  return null
+}
+export function createRpcApi(ctx: ClientContext, signal: AbortSignal): RadarApi {
+  async function call<T>(method: string, args: Record<string, unknown> = {}): Promise<T> {
+    const response = await ctx.connection.rpc.call('/api', `marketRadar/${method}`, { args }, signal)
+    if (!response.ok) throw new Error(response.error.message)
+    return response.value as T
+  }
+  return {
+    snapshot: () => call('snapshot'), save: config => call('save', { config }),
+    resolve: (market, symbol) => call('resolve', { market, symbol }), series: instrumentId => call('series', { instrumentId }),
+    refresh: () => call('refresh'), visibility: (clientId, open) => call('visibility', { clientId, open }),
+  }
+}
+export function apply(ctx: ClientContext): void {
+  const abort = new AbortController()
+  const radar = new RadarController(createRpcApi(ctx, abort.signal))
+  // Keep the live controller in the plugin closure. Slot business injection
+  // adapts objects; passing a mutable class there splits action/read receivers.
+  const Ticker = () => <BottomBar radar={radar}/>
+  const Overlay = () => <Dashboard radar={radar}/>
+  const InputBridge = ({ inputActions }: { inputActions: InputActions }) => <DraftBridge radar={radar} inputActions={inputActions}/>
+  ctx.effect(() => {
+    const element = document.createElement('style'); element.dataset.marketRadarStyle = ''; element.textContent = styles; document.head.append(element)
+    const toggle = (e: KeyboardEvent) => {
+      const primary = e.ctrlKey !== e.metaKey
+      if (primary && !e.altKey && e.shiftKey && e.code === 'F9' && !e.repeat && !e.isComposing && !e.getModifierState('AltGraph')) { e.preventDefault(); e.stopPropagation(); void radar.toggleHidden() }
+    }
+    // Desktop's native keyboard bridge owns configured shortcuts, so register
+    // with the public catalog rather than relying on a document key listener.
+    let disposeShortcut: (() => void) | undefined
+    if (ctx.shortcuts) {
+      const command = {
+        id: 'market-radar.toggle-visibility', label: () => '行情雷达：隐藏或恢复', aliases: ['market radar', 'hide quotes'],
+        defaults: Object.fromEntries(['desktop:windows', 'desktop:macos', 'desktop:linux', 'web:windows', 'web:macos'].map(profile => [profile, { code: 'F9', modifiers: ['primary', 'shift'] }])),
+        regions: ['page', 'editable', 'terminal'],
+        resolve: () => ({ status: 'handled' as const, run: () => { void radar.toggleHidden() } }),
+      }
+      try { disposeShortcut = ctx.shortcuts.register(command) }
+      catch { disposeShortcut = ctx.shortcuts.register({ ...command, defaults: {} }) }
+    } else document.addEventListener('keydown', toggle, true)
+    void radar.poll()
+    return () => { disposeShortcut?.(); document.removeEventListener('keydown', toggle, true); radar.dispose(); abort.abort(); element.remove() }
+  }, 'market-radar client lifecycle')
+  ctx.slots.inject('shell.bottom', () => {
+    try { return ctx.slots.register({ name: 'shell.bottom', id: 'market-radar-ticker' }, Ticker) }
+    catch { radar.patch({ bottomMounted: false }); return () => {} }
+  })
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'market-radar-overlay', order: 30 }, Overlay))
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({ name: 'conversation.input.dock', id: 'market-radar-draft', order: 99 }, InputBridge))
+}

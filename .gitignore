@@ -1,0 +1,12 @@
+node_modules/
+.cache/
+.fixture/
+.sdk/
+lib/
+dist/
+*.tgz
+SHA256SUMS.txt
+assets/screenshot-chart.jpg
+assets/screenshot-dark.jpg
+assets/screenshot-desktop.jpg
+assets/screenshot-draft.jpg
