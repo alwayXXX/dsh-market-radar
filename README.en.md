@@ -19,7 +19,7 @@ Fully quit the desktop app, including its tray process, before installing throug
 - Review a snapshot, then insert it into the current editable conversation draft. Existing text and attachments remain; the user submits it.
 - Settings are local and profile-specific. Monitoring requires a running DSH process and an awake computer.
 
-Free upstream feeds can be delayed, unavailable or change format. Recurring trading hours do not cover every holiday or exceptional closure. Windows desktop validation and remaining limitations are recorded in [docs/VALIDATION.md](docs/VALIDATION.md).
+Free upstream feeds can be delayed, unavailable or change format. Recurring trading hours do not cover every holiday or exceptional closure. The ticker, hide shortcut and draft insertion were checked in the Windows desktop app; the newer multi-range chart and live market alert triggers still need desktop validation.
 
 ## Disclaimer
 

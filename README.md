@@ -4,7 +4,7 @@
 
 当前仓库为 `0.1.3-dev.0` 预发行版；npm 正式版 `0.1.2` 尚不包含多时间范围走势、分方向涨跌提醒和本次 ETF 显示修正。预发行版的走势界面尚未完成真实 DSH 桌面交互验收。
 
-[English](README.en.md) · [开发版验证](docs/VALIDATION-0.1.3-dev.0.md) · [首版验证](docs/VALIDATION.md) · [MIT](LICENSE)
+[English](README.en.md) · [MIT](LICENSE)
 
 ## 功能
 
