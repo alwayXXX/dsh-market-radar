@@ -3,7 +3,7 @@ import { defaultConfig, instrumentFor, validateConfig } from './config.ts'
 import { quoteStatus } from './market-time.ts'
 import { PublicMarketProvider, sampledSeries, sanitizePoints, type MarketProvider } from './providers.ts'
 import type { ConfigStore } from './storage.ts'
-import type { Market, PricePoint, PriceSeries, RadarConfig, RadarSnapshot } from './types.ts'
+import type { ChartRange, Market, PricePoint, PriceSeries, RadarConfig, RadarSnapshot } from './types.ts'
 
 export class RadarEngine {
   private state: RadarSnapshot = { config: defaultConfig(), quotes: {}, alerts: [], errors: {}, updatedAt: new Date(0).toISOString() }
@@ -59,7 +59,7 @@ export class RadarEngine {
       this.state.quotes = Object.fromEntries(Object.entries(this.state.quotes).filter(([id]) => ids.has(id)))
       this.state.errors = Object.fromEntries(Object.entries(this.state.errors ?? {}).filter(([id]) => ids.has(id)))
       for (const id of this.samples.keys()) if (!ids.has(id)) this.samples.delete(id)
-      for (const id of this.history.keys()) if (!ids.has(id)) this.history.delete(id)
+      for (const [key, value] of this.history) if (!ids.has(value.series.instrumentId)) this.history.delete(key)
       if (next.hidden) this.state.alerts = []
       this.schedule()
       return this.snapshot()
@@ -126,19 +126,31 @@ export class RadarEngine {
     const q = this.state.quotes[id]
     if (q) this.state.quotes[id] = { ...q, status: 'error', error: error.slice(0, 150) }
   }
-  async series(id: string): Promise<PriceSeries> {
+  async series(id: string, range: ChartRange = '1d'): Promise<PriceSeries> {
     await this.ready
+    if (!['1d', '5d', '1m', '6m', 'ytd', '1y', '5y', 'max'].includes(range)) throw new Error('不支持该走势时间范围')
     const i = this.state.config.instruments.find(i => i.id === id)
     if (!i) throw new Error('标的不在自选中')
-    const cached = this.history.get(id)
-    if (cached && this.now() - cached.at < 60_000) return structuredClone(cached.series)
+    const key = `${id}|${range}`
+    const cached = this.history.get(key)
+    if (cached && this.now() - cached.at < (range === '1d' || range === '5d' ? 60_000 : 600_000)) return structuredClone(cached.series)
     const fallback = sampledSeries(i, this.samples.get(id) ?? [], this.state.quotes[id])
     try {
-      const points = await this.provider.series(i, this.controller.signal)
-      const series: PriceSeries = points.length ? { ...fallback, points, coverage: 'provider', source: this.state.quotes[id]?.source ?? (i.market === 'gold' ? '新浪财经' : '腾讯财经') } : fallback
-      if (!this.disposed && this.state.config.instruments.some(item => item.id === id)) this.history.set(id, { at: this.now(), series })
+      let series: PriceSeries
+      if (range === '1d') {
+        const points = await this.provider.series(i, this.controller.signal)
+        series = points.length ? { ...fallback, points, coverage: 'provider', granularity: 'minute', source: this.state.quotes[id]?.source ?? (i.market === 'gold' ? '新浪财经' : '腾讯财经') } : fallback
+      } else {
+        if (!this.provider.history) throw new Error('数据源暂不支持该时间范围')
+        const data = await this.provider.history(i, range, this.controller.signal)
+        series = { ...fallback, range, points: data.points, previousClose: null, coverage: 'provider', source: data.source, granularity: data.granularity, note: data.note, ...(!data.points.length ? { error: '该时间范围暂无可用数据' } : {}) }
+      }
+      if (!this.disposed && this.state.config.instruments.some(item => item.id === id)) this.history.set(key, { at: this.now(), series })
       return series
-    } catch { return { ...fallback, error: '历史走势暂不可用，显示已采样区间' } }
+    } catch (error) {
+      if (range === '1d') return { ...fallback, error: '历史走势暂不可用，显示已采样区间' }
+      return { ...fallback, range, points: [], previousClose: null, coverage: 'provider', granularity: 'daily', error: error instanceof Error ? `走势暂不可用：${error.message}` : '历史走势暂不可用' }
+    }
   }
   dispose(): void {
     this.disposed = true

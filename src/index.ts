@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { RadarEngine } from './engine.ts'
 import { FileConfigStore } from './storage.ts'
-import type { Market, RadarConfig } from './types.ts'
+import type { ChartRange, Market, RadarConfig } from './types.ts'
 
 export const name = 'dsh-market-radar'
 export const inject = ['typertGateway']
@@ -28,9 +28,9 @@ export class MarketRadarService extends TypertRemoteService {
   @Remote('resolve')
   resolve(market: Market, symbol: string) { return this.engine.resolve(market, symbol) }
   @Remote('series')
-  series(instrumentId: string) {
+  series(instrumentId: string, range?: ChartRange) {
     if (typeof instrumentId !== 'string' || instrumentId.length > 80) throw new Error('标的代码无效')
-    return this.engine.series(instrumentId)
+    return this.engine.series(instrumentId, range)
   }
   @Remote('refresh')
   refresh() { return this.engine.refresh(true) }

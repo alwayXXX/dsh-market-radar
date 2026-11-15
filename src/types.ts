@@ -1,5 +1,7 @@
 export type Market = 'gold' | 'cn' | 'us'
 export type QuoteStatus = 'live' | 'closed' | 'delayed' | 'error' | 'unknown'
+export type ChartRange = '1d' | '5d' | '1m' | '6m' | 'ytd' | '1y' | '5y' | 'max'
+export type SeriesGranularity = 'minute' | 'five-minute' | 'daily' | 'sampled'
 export interface Instrument {
   id: string
   market: Market
@@ -23,17 +25,21 @@ export interface Quote {
 export interface PricePoint { time: number; price: number; breakBefore?: boolean }
 export interface PriceSeries {
   instrumentId: string
+  range: ChartRange
   points: PricePoint[]
   previousClose: number | null
   source: string
   coverage: 'provider' | 'sampled'
+  granularity: SeriesGranularity
+  note?: string
   updatedAt: string
   error?: string
 }
+export type AlertKind = 'above' | 'below' | 'move' | 'move_up' | 'move_down'
 export interface AlertRule {
   id: string
   instrumentId: string
-  kind: 'above' | 'below' | 'move'
+  kind: AlertKind
   value: number
   enabled: boolean
   cooldownMinutes: number
@@ -60,7 +66,7 @@ export interface RadarApi {
   snapshot(): Promise<RadarSnapshot>
   save(config: RadarConfig): Promise<RadarSnapshot>
   resolve(market: Market, symbol: string): Promise<Instrument>
-  series(instrumentId: string): Promise<PriceSeries>
+  series(instrumentId: string, range?: ChartRange): Promise<PriceSeries>
   refresh(): Promise<RadarSnapshot>
   visibility(clientId: string, open: boolean): Promise<void>
 }

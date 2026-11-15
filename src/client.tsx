@@ -5,7 +5,7 @@ import { PriceChart } from './chart.tsx'
 import { insertSnapshot } from './draft.ts'
 import { formatPercent, formatPrice, snapshotText, STATUS_LABEL } from './snapshot.ts'
 import type { InputActions, ClientContext } from './host-types.ts'
-import type { Instrument, Market, PriceSeries, Quote, RadarApi, RadarConfig } from './types.ts'
+import type { AlertKind, ChartRange, Instrument, Market, PriceSeries, Quote, RadarApi, RadarConfig } from './types.ts'
 import styles from './styles.css'
 
 export const name = 'dsh-market-radar-client'
@@ -87,7 +87,7 @@ function Rules({ radar, instrumentId }: { radar: RadarController; instrumentId?:
   const state = useRadar(radar)
   const config = state.snapshot.config
   const [id, setId] = useState(instrumentId ?? config.instruments[0]?.id ?? '')
-  const [kind, setKind] = useState<'above' | 'below' | 'move'>('above')
+  const [kind, setKind] = useState<AlertKind>('above')
   const [value, setValue] = useState('')
   const [cooldown, setCooldown] = useState('15')
   const [error, setError] = useState('')
@@ -99,12 +99,13 @@ function Rules({ radar, instrumentId }: { radar: RadarController; instrumentId?:
       void radar.save(c => c.alerts.push({ id: crypto.randomUUID(), instrumentId: id, kind, value: Number(value), cooldownMinutes: Number(cooldown), enabled: true })).then(() => setValue('')).catch(() => {})
     }}>
       <label>标的<select value={id} onChange={e => setId(e.target.value)}>{config.instruments.map(i => <option key={i.id} value={i.id}>{i.name} · {i.symbol}</option>)}</select></label>
-      <div className="mr-form-row"><label>条件<select value={kind} onChange={e => setKind(e.target.value as typeof kind)}><option value="above">价格高于或等于</option><option value="below">价格低于或等于</option><option value="move">当日涨跌幅绝对值达到</option></select></label><label>阈值{kind === 'move' ? '（%）' : ''}<input type="number" min="0" step="any" value={value} onChange={e => setValue(e.target.value)} placeholder={kind === 'move' ? '3' : '目标价格'} required/></label></div>
+      <div className="mr-form-row"><label>条件<select value={kind} onChange={e => setKind(e.target.value as AlertKind)}><option value="above">价格高于或等于</option><option value="below">价格低于或等于</option><option value="move_up">当日涨幅达到</option><option value="move_down">当日跌幅达到</option><option value="move">当日涨跌幅绝对值达到</option></select></label><label>阈值{kind.startsWith('move') ? '（%）' : ''}<input type="number" min="0" step="any" value={value} onChange={e => setValue(e.target.value)} placeholder={kind.startsWith('move') ? '3' : '目标价格'} required/></label></div>
+      {kind.startsWith('move') && <p className="mr-muted">请输入正数；例如 3 表示{kind === 'move_up' ? '上涨 +3%' : kind === 'move_down' ? '下跌 -3%' : '上涨 +3% 或下跌 -3%'}。</p>}
       <label>冷却时间（分钟）<input type="number" min="1" max="1440" value={cooldown} onChange={e => setCooldown(e.target.value)} required/></label>
       <button className="mr-button mr-primary" disabled={state.busy || !id || !value || !state.connected}>添加提醒</button>
     </form>
     {error && <p className="mr-error">{error}</p>}
-    <div className="mr-rule-list">{rules.map(rule => <div className="mr-rule" key={rule.id}><label className="mr-switch"><input type="checkbox" checked={rule.enabled} disabled={state.busy} onChange={e => { const enabled = e.target.checked; void radar.save(c => { c.alerts.find(a => a.id === rule.id)!.enabled = enabled }).catch(() => {}) }}/><span><strong>{config.instruments.find(i => i.id === rule.instrumentId)?.name}</strong><small>{rule.kind === 'above' ? '价格 ≥' : rule.kind === 'below' ? '价格 ≤' : '|当日涨跌幅| ≥'} {rule.value}{rule.kind === 'move' ? '%' : ''} · 冷却 {rule.cooldownMinutes} 分钟</small></span></label><IconButton icon="trash" label="删除提醒" disabled={state.busy} onClick={() => { void radar.save(c => { c.alerts = c.alerts.filter(a => a.id !== rule.id) }).catch(() => {}) }}/></div>)}{!rules.length && <p className="mr-empty-small">尚未设置提醒</p>}</div>
+    <div className="mr-rule-list">{rules.map(rule => <div className="mr-rule" key={rule.id}><label className="mr-switch"><input type="checkbox" checked={rule.enabled} disabled={state.busy} onChange={e => { const enabled = e.target.checked; void radar.save(c => { c.alerts.find(a => a.id === rule.id)!.enabled = enabled }).catch(() => {}) }}/><span><strong>{config.instruments.find(i => i.id === rule.instrumentId)?.name}</strong><small>{rule.kind === 'above' ? '价格 ≥' : rule.kind === 'below' ? '价格 ≤' : rule.kind === 'move_up' ? '当日涨幅 ≥' : rule.kind === 'move_down' ? '当日跌幅 ≥' : '|当日涨跌幅| ≥'} {rule.value}{rule.kind.startsWith('move') ? '%' : ''} · 冷却 {rule.cooldownMinutes} 分钟</small></span></label><IconButton icon="trash" label="删除提醒" disabled={state.busy} onClick={() => { void radar.save(c => { c.alerts = c.alerts.filter(a => a.id !== rule.id) }).catch(() => {}) }}/></div>)}{!rules.length && <p className="mr-empty-small">尚未设置提醒</p>}</div>
     {!instrumentId && state.snapshot.alerts.length > 0 && <><h3 className="mr-spaced">最近提醒</h3>{state.snapshot.alerts.map(a => <div className="mr-alert-item" key={a.id}><span>{a.text}</span><small>{new Date(a.at).toLocaleTimeString('zh-CN', { hour12: false })}</small></div>)}</>}
   </section>
 }
@@ -129,34 +130,37 @@ function Settings({ radar }: { radar: RadarController }) {
     }}/>
     {pending && <div className="mr-import-preview"><strong>确认替换当前配置</strong><p>{pending.instruments.length} 个自选 · {pending.alerts.length} 条提醒。保留当前隐藏状态。</p><div className="mr-button-row"><button className="mr-button" onClick={() => setPending(null)}>取消</button><button className="mr-button mr-primary" disabled={state.busy} onClick={() => { void radar.save(c => { Object.assign(c, pending, { revision: c.revision, hidden: c.hidden }) }).then(() => { setPending(null); radar.notify('配置已导入'); void radar.refresh() }).catch(() => {}) }}>确认导入</button></div></div>}
     {error && <p className="mr-error" role="alert">{error}</p>}
-    <div className="mr-source-note"><h3>数据与运行</h3><p>股票行情来自腾讯财经，黄金行情来自新浪财经。报价时间由数据源提供，免费数据可能存在延迟或暂时不可用。</p><p>监测在 DSH 运行且电脑保持唤醒时进行。自选和提醒保存在本机当前 profile。</p><p>首版使用常规交易时段判断休市，节假日及临时休市可能显示为“报价已延迟”。</p></div>
+    <div className="mr-source-note"><h3>数据与运行</h3><p>股票报价来自腾讯财经，黄金报价来自新浪财经；历史走势还可能来自 Yahoo Finance 或上海黄金交易所，图表下方标明实际来源。免费数据可能存在延迟或暂时不可用。</p><p>监测在 DSH 运行且电脑保持唤醒时进行。自选和提醒保存在本机当前 profile。</p><p>首版使用常规交易时段判断休市，节假日及临时休市可能显示为“报价已延迟”。</p></div>
   </section>
 }
 function InstrumentDetail({ radar, instrument, onBack, onRules }: { radar: RadarController; instrument: Instrument; onBack: () => void; onRules: () => void }) {
   const state = useRadar(radar)
   const [series, setSeries] = useState<PriceSeries | null>(null)
+  const [range, setRange] = useState<ChartRange>('1d')
   const [error, setError] = useState('')
   const [preview, setPreview] = useState('')
   useEffect(() => {
     let stopped = false
     let timer: ReturnType<typeof setTimeout>
-    setSeries(null); setError(''); setPreview('')
+    setSeries(null); setError('')
     async function update() {
-      try { const value = await radar.api.series(instrument.id); if (!stopped) { setSeries(value); setError('') } }
+      try { const value = await radar.api.series(instrument.id, range); if (!stopped) { setSeries(value); setError('') } }
       catch (e) { if (!stopped) setError(e instanceof Error ? e.message : '走势暂不可用') }
-      if (!stopped) timer = setTimeout(() => { void update() }, 30_000)
+      if (!stopped) timer = setTimeout(() => { void update() }, range === '1d' ? 30_000 : range === '5d' ? 60_000 : 600_000)
     }
     void update()
     return () => { stopped = true; clearTimeout(timer) }
-  }, [radar, instrument.id])
+  }, [radar, instrument.id, range])
   const quote = state.snapshot.quotes[instrument.id]
+  const displayInstrument = quote?.instrument ?? instrument
   return <section className="mr-detail"><button className="mr-text-button mr-back" onClick={onBack}><Icon name="back"/>返回自选</button>
-    <div className="mr-detail-heading"><div><span className={`mr-market-tag mr-tag-${instrument.market}`}>{MARKET_LABEL[instrument.market]}</span><h3>{quote?.instrument.name ?? instrument.name}</h3><p>{instrument.symbol} · {instrument.currency}/{instrument.unit}</p></div><IconButton icon="bell" label="设置此标的提醒" onClick={onRules}/></div>
+    <div className="mr-detail-heading"><div><span className={`mr-market-tag mr-tag-${instrument.market}`}>{MARKET_LABEL[instrument.market]}</span><h3>{displayInstrument.name}</h3><p>{displayInstrument.symbol} · {displayInstrument.currency}/{displayInstrument.unit}</p></div><IconButton icon="bell" label="设置此标的提醒" onClick={onRules}/></div>
     <div className="mr-detail-price"><strong>{formatPrice(quote?.price)}</strong><Change quote={quote}/></div>
     <div className="mr-detail-status"><span className={`mr-status mr-status-${quote?.status ?? 'unknown'}`}>{quote ? STATUS_LABEL[quote.status] : '等待报价'}</span>{quote?.asOf && <span>{new Date(quote.asOf).toLocaleString('zh-CN', { hour12: false })}</span>}</div>
     {state.snapshot.errors?.[instrument.id] && <p className="mr-error">{state.snapshot.errors[instrument.id]}</p>}
     <div className="mr-chart-title"><h4>价格走势</h4><span>{instrument.market === 'us' ? '纽约时间' : '北京时间'}</span></div>
-    {series ? <PriceChart series={series} instrument={instrument}/> : <div className="mr-chart-empty">{error || '正在读取走势…'}</div>}
+    <div className="mr-chart-ranges" role="group" aria-label="走势时间范围">{([['1d', '1天'], ['5d', '5天'], ['1m', '1月'], ['6m', '半年'], ['ytd', 'YTD'], ['1y', '1年'], ['5y', '5年'], ['max', 'Max']] as const).map(([value, label]) => <button key={value} type="button" title={value === 'ytd' ? '年初至今' : value === 'max' ? '当前接口及请求上限内的历史' : undefined} className={range === value ? 'mr-selected' : ''} aria-pressed={range === value} onClick={() => setRange(value)}>{label}</button>)}</div>
+    {series?.instrumentId === instrument.id && series.range === range ? <PriceChart key={`${instrument.id}:${range}`} series={series} instrument={displayInstrument}/> : <div className="mr-chart-empty">{error || '正在读取走势…'}</div>}
     <div className="mr-detail-data"><div><span>昨收</span><strong>{formatPrice(quote?.previousClose ?? undefined)}</strong></div><div><span>涨跌额</span><strong>{quote?.change == null ? '—' : `${quote.change >= 0 ? '+' : ''}${formatPrice(quote.change)}`}</strong></div><div><span>来源</span><strong>{quote?.source ?? '—'}</strong></div></div>
     <button className="mr-button mr-primary mr-full" disabled={!quote} onClick={() => { if (quote) setPreview(snapshotText([quote])) }}><Icon name="chat"/>准备行情快照</button>
     {preview && <div className="mr-snapshot-preview"><h4>放入对话前预览</h4><pre>{preview}</pre><p className="mr-muted">加入草稿后由你发送，已有文字和附件会保留。</p><div className="mr-button-row"><button className="mr-button" onClick={() => setPreview('')}>取消</button><button className="mr-button mr-primary" disabled={!state.draftReady} onClick={() => {
@@ -231,7 +235,7 @@ export function createRpcApi(ctx: ClientContext, signal: AbortSignal): RadarApi 
   }
   return {
     snapshot: () => call('snapshot'), save: config => call('save', { config }),
-    resolve: (market, symbol) => call('resolve', { market, symbol }), series: instrumentId => call('series', { instrumentId }),
+    resolve: (market, symbol) => call('resolve', { market, symbol }), series: (instrumentId, range) => call('series', { instrumentId, range }),
     refresh: () => call('refresh'), visibility: (clientId, open) => call('visibility', { clientId, open }),
   }
 }

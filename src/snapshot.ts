@@ -8,5 +8,5 @@ export function snapshotText(quotes: Quote[]): string {
   ].join('\n'))
   return `【行情快照】\n${rows.join('\n')}\n\n请基于以上快照说明价格与涨跌表现，并区分已知信息和缺失信息。解释变化原因所需的新闻或宏观信息请另行核实。`
 }
-export function formatPrice(price: number | undefined): string { return price === undefined ? '—' : price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: price < 1 ? 4 : 2 }) }
+export function formatPrice(price: number | undefined): string { return price === undefined ? '—' : price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) }
 export function formatPercent(value: number | null | undefined): string { return value == null ? '—' : `${value >= 0 ? '+' : ''}${value.toFixed(2)}%` }

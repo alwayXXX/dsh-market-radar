@@ -133,6 +133,11 @@ body[data-ds-dark-theme] .mr-root[data-colors="green-up"], [data-theme="dark"] .
 .mr-chart-title { display:flex; justify-content:space-between; align-items:center; margin-top:26px; }
 .mr-chart-title h4 { font-size:11px; font-weight:550; }
 .mr-chart-title span { font-size:9px; color:var(--mr-muted); }
+.mr-chart-ranges { display:flex; gap:3px; margin-top:10px; }
+.mr-chart-ranges button { flex:1; border:0; border-radius:5px; padding:5px 3px; background:transparent; color:var(--mr-muted); font:inherit; font-size:10px; cursor:pointer; }
+.mr-chart-ranges button:hover { color:var(--mr-text); background:var(--mr-hover); }
+.mr-chart-ranges button.mr-selected { color:var(--mr-accent); background:var(--mr-hover); font-weight:600; }
+.mr-chart-ranges button:focus-visible { outline:2px solid var(--mr-accent); outline-offset:1px; }
 .mr-chart { margin-top:12px; }
 .mr-chart svg { width:100%; display:block; overflow:visible; }
 .mr-chart-reading { display:flex; align-items:center; gap:8px; font-size:9px; color:var(--mr-muted); height:20px; }

@@ -15,9 +15,11 @@ export class AlertEngine {
         if (old) old.lastQuote = 0
         continue
       }
-      const value = rule.kind === 'move' ? Math.abs(q.changePercent ?? NaN) : q.price
+      const value = rule.kind === 'move' ? Math.abs(q.changePercent ?? NaN)
+        : rule.kind === 'move_up' || rule.kind === 'move_down' ? q.changePercent ?? NaN : q.price
       if (!Number.isFinite(value)) { if (old) old.lastQuote = 0; continue }
-      const inside = rule.kind === 'below' ? value <= rule.value : value >= rule.value
+      const inside = rule.kind === 'below' ? value <= rule.value
+        : rule.kind === 'move_down' ? value <= -rule.value : value >= rule.value
       const stamp = Date.parse(q.asOf)
       const fingerprint = `${rule.instrumentId}:${rule.kind}:${rule.value}:${rule.cooldownMinutes}`
       if (!old || old.fingerprint !== fingerprint || now - old.lastQuote > 180_000 || stamp < old.lastQuote) {
@@ -27,7 +29,10 @@ export class AlertEngine {
       if (stamp === old.lastQuote) continue
       if (inside && !old.inside && now - old.lastAt >= rule.cooldownMinutes * 60_000 && !hidden) {
         old.lastAt = now
-        const condition = rule.kind === 'above' ? `高于 ${rule.value}` : rule.kind === 'below' ? `低于 ${rule.value}` : `当日涨跌幅达到 ${rule.value}%`
+        const condition = rule.kind === 'above' ? `价格达到或高于 ${rule.value}`
+          : rule.kind === 'below' ? `价格达到或低于 ${rule.value}`
+            : rule.kind === 'move_up' ? `当日涨幅达到 +${rule.value}%`
+              : rule.kind === 'move_down' ? `当日跌幅达到 -${rule.value}%` : `当日涨跌幅绝对值达到 ${rule.value}%`
         events.push({ id: `${rule.id}-${now}`, ruleId: rule.id, instrumentId: rule.instrumentId, text: `${q.instrument.name} ${condition} · 当前 ${q.price} ${q.instrument.currency}`, at: new Date(now).toISOString() })
       }
       old.inside = inside

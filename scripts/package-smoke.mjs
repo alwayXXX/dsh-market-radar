@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdir, mkdtemp, realpath, readdir } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import vm from 'node:vm'
@@ -16,10 +16,12 @@ function run(args, cwd = root) {
   if (p.status !== 0) throw new Error(`${args.join(' ')}\n${p.stdout}\n${p.stderr}`)
   return p.stdout
 }
-await mkdir(join(root, 'dist'), { recursive: true })
-run(['pack', '--pack-destination', join(root, 'dist')])
+// A separate destination permits testing an unreleased build without overwriting a released archive.
+const packDir = process.env.RADAR_PACK_DIR ? resolve(root, process.env.RADAR_PACK_DIR) : join(root, 'dist')
+await mkdir(packDir, { recursive: true })
+run(['pack', '--pack-destination', packDir])
 const projectManifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
-const tarball = join(root, 'dist', `${projectManifest.name}-${projectManifest.version}.tgz`)
+const tarball = join(packDir, `${projectManifest.name}-${projectManifest.version}.tgz`)
 await writeFile(join(work, 'package.json'), JSON.stringify({ name: 'market-radar-package-check', version: '0.0.0', private: true }))
 // Prevent the throwaway install from becoming an importer in the project lockfile.
 await writeFile(join(work, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
@@ -39,6 +41,10 @@ const { Context } = await import(pathToFileURL(rootRequire.resolve('@deepseek-ai
 const context = new Context()
 host.apply(context, { dataDir: join(work, 'data') })
 await context.fiber.dispose()
+const serviceContext = new Context()
+const service = new host.MarketRadarService(serviceContext, { async series(instrumentId, range) { return { instrumentId, range } } })
+assert.deepEqual(await service.series('gold:XAU', 'max'), { instrumentId: 'gold:XAU', range: 'max' })
+await serviceContext.fiber.dispose()
 let client
 const styles = new Set(), slots = new Set(), listeners = new Set(), commands = new Map(), effects = []
 let remoteSnapshot = { config: { version: 1, revision: 0, hidden: false, instruments: [], alerts: [], pinned: [], colorMode: 'red-up' }, quotes: {}, alerts: [], updatedAt: '' }
@@ -50,6 +56,12 @@ vm.runInNewContext(clientBundle, {
   window: { __ModuleLoader__: { load({ id, factory }) { assert.equal(id, 'dsh-market-radar'); client = factory(name => { assert.ok(['react', 'react/jsx-runtime'].includes(name)); return rootRequire(name) }) } } },
   document, crypto: webcrypto, AbortController, setTimeout, clearTimeout, structuredClone,
 })
+let observedSeriesCall
+const adapter = client.createRpcApi({ connection: { rpc: { async call(channel, endpoint, payload) { observedSeriesCall = { channel, endpoint, payload }; return { ok: true, value: { range: payload.args.range } } } } } }, new AbortController().signal)
+assert.equal((await adapter.series('gold:XAU', 'ytd')).range, 'ytd')
+assert.equal(observedSeriesCall.endpoint, 'marketRadar/series')
+assert.equal(observedSeriesCall.payload.args.instrumentId, 'gold:XAU')
+assert.equal(observedSeriesCall.payload.args.range, 'ytd')
 client.apply({ effect(fn) { effects.push(fn()) }, shortcuts: { register(command) { commands.set(command.id, command); return () => commands.delete(command.id) } }, slots: { inject(name, fn) { effects.push(fn()) }, register(spec) { slots.add(spec.name); return () => slots.delete(spec.name) } }, connection: { rpc: { async call(channel, endpoint, payload) {
   if (endpoint.endsWith('/save')) remoteSnapshot = { ...remoteSnapshot, config: { ...structuredClone(payload.args.config), revision: remoteSnapshot.config.revision + 1 } }
   return { ok: true, value: endpoint.endsWith('/snapshot') || endpoint.endsWith('/save') ? structuredClone(remoteSnapshot) : null }

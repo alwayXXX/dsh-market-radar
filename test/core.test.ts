@@ -5,7 +5,7 @@ import { sourceTime, quoteStatus, scheduledClosed } from '../src/market-time.ts'
 import { parseTencent, parseSina, parseGoldSeries, parseTencentSeries, sanitizePoints } from '../src/providers.ts'
 import { AlertEngine } from '../src/alerts.ts'
 import { RadarEngine } from '../src/engine.ts'
-import { snapshotText } from '../src/snapshot.ts'
+import { formatPrice, snapshotText } from '../src/snapshot.ts'
 import type { AlertRule, Instrument, Quote, RadarConfig } from '../src/types.ts'
 import type { ConfigStore } from '../src/storage.ts'
 
@@ -52,6 +52,11 @@ test('indices use points and provider-identified ETFs retain fund units', () => 
   const body = tencentRow('usVOO', 'ETF', '103', '2026-11-16 10:00:00').replace(/~";/, '~GP-ETF";')
   const [q] = parseTencent(body, [instrumentFor('us', 'VOO')], now)
   assert.equal(q.instrument.unit, '份')
+  const fields = Array(88).fill(''); fields[1] = '沪深300ETF华泰柏瑞'; fields[3] = '4.083'; fields[4] = '4.114'; fields[30] = '20261116100000'; fields[61] = 'ETF'
+  const [cnEtf] = parseTencent(`v_sh510300="${fields.join('~')}";`, [instrumentFor('cn', 'sh510300')], now)
+  assert.equal(cnEtf.instrument.unit, '份')
+  assert.equal(formatPrice(cnEtf.price), '4.083')
+  assert.equal(formatPrice(693.38), '693.38')
   const config = defaultConfig()
   assert.equal(validateConfig(config).instruments.find(i => i.symbol === 'VOO')?.unit, '份')
 })
@@ -82,6 +87,60 @@ test('minute parsers handle JSONP as data, deduplicate and preserve missing inte
   assert.equal(sanitizePoints([...minute, minute[0], { time: NaN, price: 2 }]).length, 2)
 })
 const rule: AlertRule = { id: 'r1', instrumentId: cn.id, kind: 'above', value: 110, enabled: true, cooldownMinutes: 15 }
+test('configuration retains legacy absolute and directional percentage alerts', () => {
+  const config = defaultConfig()
+  config.alerts = (['move', 'move_up', 'move_down'] as const).map((kind, index) => ({
+    id: `move-${index}`, instrumentId: cn.id, kind, value: 3, enabled: true, cooldownMinutes: 15,
+  }))
+  config.instruments.push(cn)
+  assert.deepEqual(validateConfig(JSON.parse(JSON.stringify(config))).alerts, config.alerts)
+  assert.throws(() => validateConfig({ ...config, alerts: [{ ...config.alerts[1], value: -3 }] }), /提醒规则/)
+})
+test('directional percentage alerts fire only when their own signed threshold is crossed', () => {
+  const up: AlertRule = { ...rule, id: 'up', kind: 'move_up', value: 3, cooldownMinutes: 1 }
+  const down: AlertRule = { ...rule, id: 'down', kind: 'move_down', value: 3, cooldownMinutes: 1 }
+  const engine = new AlertEngine()
+  const run = (price: number, seconds: number, hidden = false) => {
+    const time = now + seconds * 1000
+    return engine.evaluate([up, down], { [cn.id]: quote(price, time) }, time, hidden)
+  }
+  assert.equal(run(104, 0).length, 0, 'first quote establishes a baseline')
+  assert.equal(run(100, 15).length, 0)
+  const downEvent = run(97, 30)
+  assert.deepEqual(downEvent.map(e => e.ruleId), ['down'])
+  assert.match(downEvent[0].text, /跌幅达到 -3%/)
+  assert.equal(run(96, 45).length, 0, 'a sustained condition must not repeat')
+  assert.equal(run(100, 60).length, 0)
+  const upEvent = run(103, 75)
+  assert.deepEqual(upEvent.map(e => e.ruleId), ['up'])
+  assert.match(upEvent[0].text, /涨幅达到 \+3%/)
+  assert.equal(run(100, 90).length, 0)
+  assert.equal(run(103, 105).length, 0, 'cooldown applies independently to each rule')
+})
+test('legacy absolute percentage alerts still work in both directions', () => {
+  const legacy: AlertRule = { ...rule, kind: 'move', value: 3, cooldownMinutes: 1 }
+  const engine = new AlertEngine()
+  const run = (price: number, seconds: number) => {
+    const time = now + seconds * 1000
+    return engine.evaluate([legacy], { [cn.id]: quote(price, time) }, time, false)
+  }
+  assert.equal(run(100, 0).length, 0)
+  assert.equal(run(103, 15).length, 1)
+  assert.equal(run(100, 30).length, 0)
+  assert.equal(run(97, 90).length, 1)
+})
+test('directional alerts stay muted while hidden and rebaseline after missing data', () => {
+  const up: AlertRule = { ...rule, kind: 'move_up', value: 3, cooldownMinutes: 1 }
+  const engine = new AlertEngine()
+  const run = (q: Quote, seconds: number, hidden = false) => engine.evaluate([up], { [cn.id]: q }, now + seconds * 1000, hidden)
+  assert.equal(run(quote(100, now), 0).length, 0)
+  assert.equal(run(quote(103, now + 15_000), 15, true).length, 0)
+  assert.equal(run(quote(104, now + 30_000), 30).length, 0, 'hidden crossing is not replayed')
+  assert.equal(run({ ...quote(100, now + 45_000), changePercent: null }, 45).length, 0)
+  assert.equal(run(quote(104, now + 60_000), 60).length, 0, 'missing value forces a new baseline')
+  assert.equal(run(quote(100, now + 75_000), 75).length, 0)
+  assert.equal(run(quote(103, now + 90_000), 90).length, 1)
+})
 test('alerts require a fresh crossing, respect cooldown and do not repeat a satisfied condition', () => {
   const e = new AlertEngine()
   const run = (price: number, t: number, hidden = false) => e.evaluate([rule], { [cn.id]: quote(price, t) }, t, hidden)

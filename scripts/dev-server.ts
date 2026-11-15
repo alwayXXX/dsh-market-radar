@@ -26,7 +26,7 @@ const server = createServer(async (req, res) => {
       case 'save': value = await engine.save(validateConfig(args.config)); break
       case 'refresh': value = await engine.refresh(true); break
       case 'resolve': value = await engine.resolve(args.market as Market, args.symbol); break
-      case 'series': value = await engine.series(args.instrumentId); break
+      case 'series': value = await engine.series(args.instrumentId, args.range); break
       case 'visibility': value = await engine.visibility(args.clientId, args.open); break
       default: throw new Error('Unknown method')
     }

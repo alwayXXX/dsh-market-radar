@@ -40,7 +40,7 @@ export function validateConfig(raw: unknown): RadarConfig {
   if (!Array.isArray(raw.pinned) || raw.pinned.length > 3 || raw.pinned.some(v => typeof v !== 'string' || !ids.has(v)) || new Set(raw.pinned).size !== raw.pinned.length) throw new Error('行情条最多固定三个已有标的')
   if (!Array.isArray(raw.alerts) || raw.alerts.length > 200) throw new Error('提醒规则格式无效')
   const alerts: AlertRule[] = raw.alerts.map(v => {
-    if (!record(v) || typeof v.id !== 'string' || !/^[\w-]{1,80}$/.test(v.id) || typeof v.instrumentId !== 'string' || !ids.has(v.instrumentId) || !['above', 'below', 'move'].includes(v.kind as string) || typeof v.value !== 'number' || !Number.isFinite(v.value) || v.value <= 0 || typeof v.enabled !== 'boolean' || typeof v.cooldownMinutes !== 'number' || !Number.isInteger(v.cooldownMinutes) || v.cooldownMinutes < 1 || v.cooldownMinutes > 1440) throw new Error('提醒规则无效：阈值须为正数，冷却为 1–1440 分钟')
+    if (!record(v) || typeof v.id !== 'string' || !/^[\w-]{1,80}$/.test(v.id) || typeof v.instrumentId !== 'string' || !ids.has(v.instrumentId) || !['above', 'below', 'move', 'move_up', 'move_down'].includes(v.kind as string) || typeof v.value !== 'number' || !Number.isFinite(v.value) || v.value <= 0 || typeof v.enabled !== 'boolean' || typeof v.cooldownMinutes !== 'number' || !Number.isInteger(v.cooldownMinutes) || v.cooldownMinutes < 1 || v.cooldownMinutes > 1440) throw new Error('提醒规则无效：阈值须为正数，冷却为 1–1440 分钟')
     return { id: v.id, instrumentId: v.instrumentId, kind: v.kind as AlertRule['kind'], value: v.value, enabled: v.enabled, cooldownMinutes: v.cooldownMinutes }
   })
   if (new Set(alerts.map(a => a.id)).size !== alerts.length) throw new Error('提醒规则 ID 重复')
