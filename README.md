@@ -17,7 +17,7 @@
 
 ## 安装
 
-首个兼容目标为 **DSH 0.2.2-rc.3**，Node.js >=24.9.0。使用预构建 `.tgz` 安装包；本项目当前尚未发布到 npm。
+首个兼容目标为 **DSH 0.2.2-rc.3**，Node.js >=24.9.0。可从 npm 或 GitHub Release 安装预构建包。
 
 
 在官方桌面端的 Plugins 页面选择本地安装包，或使用桌面端自带 CLI：
@@ -25,10 +25,10 @@
 使用 CLI 前先完整退出桌面 App（包括托盘进程），让宿主释放 `desktop` profile；安装完成后重新打开 App。
 
 ```powershell
-& '你的安装目录\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add '安装包的绝对路径\dsh-market-radar-0.1.0.tgz'
+& '你的安装目录\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add 'dsh-market-radar@0.1.1'
 ```
 
-桌面端的 `desktop` profile 由 App 管理，使用桌面端自带 CLI。浏览器版使用其对应 CLI 和 `web` profile。安装后重新加载界面。
+也可从 [GitHub Release](https://github.com/alwayXXX/dsh-market-radar/releases) 下载 `.tgz`，将上述包名替换为安装包绝对路径。桌面端的 `desktop` profile 由 App 管理，使用桌面端自带 CLI。浏览器版使用其对应 CLI 和 `web` profile。安装后重新加载界面。
 
 ## 使用
 

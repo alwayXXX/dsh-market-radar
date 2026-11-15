@@ -1,6 +1,6 @@
 {
   "name": "dsh-market-radar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "黄金、A 股和美股的轻量行情条、自选看板、到价提醒与对话快照。",
   "type": "module",
   "license": "MIT",

@@ -18,8 +18,11 @@ function run(args, cwd = root) {
 }
 await mkdir(join(root, 'dist'), { recursive: true })
 run(['pack', '--pack-destination', join(root, 'dist')])
-const tarball = join(root, 'dist', 'dsh-market-radar-0.1.0.tgz')
+const projectManifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
+const tarball = join(root, 'dist', `${projectManifest.name}-${projectManifest.version}.tgz`)
 await writeFile(join(work, 'package.json'), JSON.stringify({ name: 'market-radar-package-check', version: '0.0.0', private: true }))
+// Prevent the throwaway install from becoming an importer in the project lockfile.
+await writeFile(join(work, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
 run(['--store-dir', join(root, '.cache/pnpm-store'), '--cache-dir', join(root, '.cache/pnpm-cache'), 'add', '--ignore-scripts', tarball], work)
 const req = createRequire(join(work, 'package.json'))
 const manifestFile = req.resolve('dsh-market-radar/package.json')
