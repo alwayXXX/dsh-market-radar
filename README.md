@@ -26,7 +26,7 @@
 使用 CLI 前先完整退出桌面 App（包括托盘进程），让宿主释放 `desktop` profile；安装完成后重新打开 App。
 
 ```powershell
-& '你的安装目录\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add 'dsh-market-radar@0.1.3'
+& '你的安装目录\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add 'dsh-market-radar@0.1.4'
 ```
 
 旧预发行版 `0.1.3-dev.0` 存在上述黄金昨收问题，请使用 `0.1.3` 或更新版本。

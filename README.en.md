@@ -4,7 +4,7 @@ A compact gold, A-share and US-stock watchlist for the official DeepSeek Harness
 
 Version `0.1.3` fixes an incorrect gold previous-close field in the older `0.1.3-dev.0` prerelease. Representative chart and alert interactions were checked in the Windows DSH desktop app.
 
-Target runtime: **DSH 0.2.2-rc.3**, Node.js >=24.9.0. Install from npm with the bundled desktop CLI (`plugin --profile desktop add dsh-market-radar@0.1.3`), or use a prebuilt `.tgz` from GitHub Releases, then reload.
+Target runtime: **DSH 0.2.2-rc.3**, Node.js >=24.9.0. Install from npm with the bundled desktop CLI (`plugin --profile desktop add dsh-market-radar@0.1.4`), or use a prebuilt `.tgz` from GitHub Releases, then reload.
 
 Fully quit the desktop app, including its tray process, before installing through its CLI. The hide shortcut is registered in the native DSH catalog: Ctrl+Shift+F9 on Windows and Command+Shift+F9 on macOS. A Windows user confirmed that Ctrl+Shift+F9 hides and restores the ticker.
 
