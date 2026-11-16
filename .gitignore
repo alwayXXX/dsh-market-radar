@@ -9,3 +9,4 @@ dist/
 *.tgz
 SHA256SUMS.txt
 /assets/screenshot-*
+/screenshots.json
