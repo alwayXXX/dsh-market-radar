@@ -3,7 +3,7 @@ import { RadarController } from './controller.ts'
 import { exportConfig, GOLD, validateConfig } from './config.ts'
 import { PriceChart } from './chart.tsx'
 import { insertSnapshot } from './draft.ts'
-import { formatPercent, formatPrice, snapshotText, STATUS_LABEL } from './snapshot.ts'
+import { formatPercent, formatPrice, quoteTooltip, snapshotText, STATUS_LABEL } from './snapshot.ts'
 import type { InputActions, ClientContext } from './host-types.ts'
 import type { AlertKind, ChartRange, Instrument, Market, PriceSeries, Quote, RadarApi, RadarConfig } from './types.ts'
 import styles from './styles.css'
@@ -28,7 +28,7 @@ function Icon({ name = 'radar', size = 16 }: { name?: string; size?: number }) {
   }
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.radar}</svg>
 }
-function useRadar(radar: RadarController) { return useSyncExternalStore(radar.subscribe, radar.getSnapshot) }
+function useRadar(radar: RadarController) { return useSyncExternalStore(radar.subscribe, radar.getSnapshot, radar.getSnapshot) }
 function IconButton({ icon, label, onClick, disabled, active }: { icon: string; label: string; onClick: () => void; disabled?: boolean; active?: boolean }) {
   return <button type="button" className={`mr-icon-button ${active ? 'mr-active' : ''}`} aria-label={label} title={label} disabled={disabled} onClick={onClick}><Icon name={icon}/></button>
 }
@@ -39,21 +39,23 @@ function BottomBar({ radar }: { radar: RadarController }) {
   useEffect(() => { radar.patch({ bottomMounted: true }); return () => { radar.patch({ bottomMounted: false }) } }, [radar])
   if (radar.hidden) return null
   const { config, quotes } = state.snapshot
+  const unread = state.snapshot.alerts.filter(alert => !alert.read).length
   return <div className="mr-root mr-bar" data-market-radar="" data-colors={config.colorMode}>
     <button className="mr-brand-button" onClick={() => radar.setOpen(!state.open)} title="打开行情雷达"><Icon size={14}/><span>行情雷达</span></button>
     <div className="mr-tickers">
       {config.pinned.map(id => {
         const i = config.instruments.find(i => i.id === id)
         if (!i) return null
-        const q = quotes[id]
-        return <button className="mr-ticker" key={id} onClick={() => { window.dispatchEvent(new CustomEvent('market-radar-select', { detail: id })); radar.setOpen(true) }} title={`${i.name} · ${q ? STATUS_LABEL[q.status] : '等待报价'}`}>
-          <span className="mr-ticker-name">{i.market === 'gold' ? i.symbol : i.name}</span><strong>{formatPrice(q?.price)}</strong><Change quote={q}/>{q && q.status !== 'live' && <span className="mr-stale-dot" aria-label={STATUS_LABEL[q.status]}/>}
+        const original = quotes[id]
+        const q = original && !state.connected ? { ...original, status: 'error' as const } : original
+        return <button className="mr-ticker" key={id} onClick={() => { window.dispatchEvent(new CustomEvent('market-radar-select', { detail: id })); radar.setOpen(true) }} title={quoteTooltip(i.name, q, state.connected ? state.snapshot.errors?.[id] : '连接失败')}>
+          <span className="mr-ticker-name">{i.market === 'gold' ? i.symbol : i.name}</span><strong>{formatPrice(q?.price)}</strong><Change quote={q}/>{(!state.connected || state.snapshot.errors?.[id] || (q && q.status !== 'live')) && <span className="mr-stale-dot" aria-label={!state.connected || state.snapshot.errors?.[id] ? '连接失败' : STATUS_LABEL[q!.status]}/>}
         </button>
       })}
       {!config.pinned.length && <button className="mr-ticker" onClick={() => radar.setOpen(true)}>添加重点自选</button>}
     </div>
     <span className={`mr-connection-dot ${state.connected ? 'mr-online' : ''}`} title={state.connected ? '行情服务已连接' : '正在连接行情服务'}/>
-    {state.snapshot.alerts.length > 0 && <button className="mr-alert-count" title="查看提醒" onClick={() => radar.setOpen(true)}><Icon name="bell" size={12}/>{state.snapshot.alerts.length}</button>}
+    {unread > 0 && <button className="mr-alert-count" title="查看未读提醒" aria-label={`${unread} 条未读提醒`} onClick={() => { window.dispatchEvent(new Event('market-radar-alerts')); radar.setOpen(true) }}><Icon name="bell" size={12}/>{unread}</button>}
     <button className="mr-bar-hide" title="隐藏行情并静音（Ctrl/⌘+Shift+F9 恢复）" aria-label="隐藏行情并静音" onClick={() => { void radar.toggleHidden() }}><Icon name="hide" size={13}/></button>
   </div>
 }
@@ -61,26 +63,32 @@ function AddInstrument({ radar, done }: { radar: RadarController; done: () => vo
   const state = useRadar(radar)
   const [market, setMarket] = useState<Market>('cn')
   const [symbol, setSymbol] = useState('')
-  const [candidate, setCandidate] = useState<Instrument | null>(null)
+  const [candidates, setCandidates] = useState<Instrument[]>([])
+  const query = useRef(0)
   const [finding, setFinding] = useState(false)
   const [error, setError] = useState('')
+  useEffect(() => () => { query.current++ }, [])
   async function find(e: FormEvent) {
-    e.preventDefault(); setError(''); setCandidate(null); setFinding(true)
-    try { setCandidate(await radar.api.resolve(market, symbol)) }
-    catch (e) { setError(e instanceof Error ? e.message : '查询失败') }
-    finally { setFinding(false) }
+    e.preventDefault(); setError(''); setCandidates([]); setFinding(true)
+    const current = ++query.current
+    try {
+      const results = market === 'cn' && /^\d{6}$/.test(symbol.trim()) ? await radar.api.candidates(symbol.trim()) : [await radar.api.resolve(market, symbol)]
+      if (query.current === current) { setCandidates(results); if (!results.length) setError('未找到标的，请输入带交易所前缀的代码重试') }
+    }
+    catch (e) { if (query.current === current) setError(e instanceof Error ? e.message : '查询失败') }
+    finally { if (query.current === current) setFinding(false) }
   }
   return <section className="mr-section"><h3>添加自选</h3><p className="mr-muted">核对市场与标的名称后，加入你的自选。</p>
     <form onSubmit={e => { void find(e) }}>
-      <label>市场<select value={market} onChange={e => { setMarket(e.target.value as Market); setCandidate(null); setSymbol('') }}>{Object.entries(MARKET_LABEL).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
-      <label>代码{market === 'gold' ? <select value={symbol} onChange={e => { setSymbol(e.target.value); setCandidate(null) }}><option value="">请选择黄金报价</option>{GOLD.map(i => <option key={i.id} value={i.symbol}>{i.name} · {i.symbol}</option>)}</select> : <input autoFocus value={symbol} placeholder={market === 'cn' ? 'sh600519 / sz000001 / sh510300' : 'AAPL / VOO / QQQM / .INX'} maxLength={20} onChange={e => { setSymbol(e.target.value); setCandidate(null) }}/>}</label>
-      {market === 'cn' && <p className="mr-muted">sh000001 是上证指数，sz000001 是平安银行，请带交易所前缀。</p>}
+      <label>市场<select value={market} onChange={e => { query.current++; setFinding(false); setMarket(e.target.value as Market); setCandidates([]); setSymbol(''); setError('') }}>{Object.entries(MARKET_LABEL).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+      <label>代码{market === 'gold' ? <select value={symbol} onChange={e => { query.current++; setFinding(false); setSymbol(e.target.value); setCandidates([]); setError('') }}><option value="">请选择黄金报价</option>{GOLD.map(i => <option key={i.id} value={i.symbol}>{i.name} · {i.symbol}</option>)}</select> : <input autoFocus value={symbol} placeholder={market === 'cn' ? '600519 / sh600519 / 000001' : 'AAPL / VOO / QQQM / .INX'} maxLength={20} onChange={e => { query.current++; setFinding(false); setSymbol(e.target.value); setCandidates([]); setError('') }}/>}</label>
+      {market === 'cn' && <p className="mr-muted">六位代码可查询候选；上证指数与平安银行均为 000001，请核对交易所。</p>}
       <button className="mr-button mr-primary" disabled={!symbol.trim() || finding || !state.connected}>{finding ? '正在查找…' : '查找标的'}</button>
     </form>
     {error && <p className="mr-error" role="alert">{error}</p>}
-    {candidate && <div className="mr-candidate"><div><strong>{candidate.name}</strong><span>{MARKET_LABEL[candidate.market]} · {candidate.symbol} · {candidate.currency}/{candidate.unit}</span></div><button className="mr-button mr-primary" disabled={state.busy || state.snapshot.config.instruments.some(i => i.id === candidate.id)} onClick={() => {
+    {candidates.map(candidate => <div className="mr-candidate" key={candidate.id}><div><strong>{candidate.name}</strong><span>{MARKET_LABEL[candidate.market]} · {candidate.symbol} · {candidate.currency}/{candidate.unit}</span></div><button className="mr-button mr-primary" disabled={state.busy || state.snapshot.config.instruments.some(i => i.id === candidate.id)} onClick={() => {
       void radar.save(c => { if (c.instruments.some(i => i.id === candidate.id)) throw new Error('该标的已在自选中'); c.instruments.push(candidate); if (c.pinned.length < 3) c.pinned.push(candidate.id) }).then(() => { done(); void radar.refresh() }).catch(() => {})
-    }}>{state.snapshot.config.instruments.some(i => i.id === candidate.id) ? '已在自选' : '确认添加'}</button></div>}
+    }}>{state.snapshot.config.instruments.some(i => i.id === candidate.id) ? '已在自选' : '确认添加'}</button></div>)}
   </section>
 }
 function Rules({ radar, instrumentId }: { radar: RadarController; instrumentId?: string }) {
@@ -106,7 +114,7 @@ function Rules({ radar, instrumentId }: { radar: RadarController; instrumentId?:
     </form>
     {error && <p className="mr-error">{error}</p>}
     <div className="mr-rule-list">{rules.map(rule => <div className="mr-rule" key={rule.id}><label className="mr-switch"><input type="checkbox" checked={rule.enabled} disabled={state.busy} onChange={e => { const enabled = e.target.checked; void radar.save(c => { c.alerts.find(a => a.id === rule.id)!.enabled = enabled }).catch(() => {}) }}/><span><strong>{config.instruments.find(i => i.id === rule.instrumentId)?.name}</strong><small>{rule.kind === 'above' ? '价格 ≥' : rule.kind === 'below' ? '价格 ≤' : rule.kind === 'move_up' ? '当日涨幅 ≥' : rule.kind === 'move_down' ? '当日跌幅 ≥' : '|当日涨跌幅| ≥'} {rule.value}{rule.kind.startsWith('move') ? '%' : ''} · 冷却 {rule.cooldownMinutes} 分钟</small></span></label><IconButton icon="trash" label="删除提醒" disabled={state.busy} onClick={() => { void radar.save(c => { c.alerts = c.alerts.filter(a => a.id !== rule.id) }).catch(() => {}) }}/></div>)}{!rules.length && <p className="mr-empty-small">尚未设置提醒</p>}</div>
-    {!instrumentId && state.snapshot.alerts.length > 0 && <><h3 className="mr-spaced">最近提醒</h3>{state.snapshot.alerts.map(a => <div className="mr-alert-item" key={a.id}><span>{a.text}</span><small>{new Date(a.at).toLocaleTimeString('zh-CN', { hour12: false })}</small></div>)}</>}
+    {!instrumentId && state.snapshot.alerts.length > 0 && <><h3 className="mr-spaced">最近提醒</h3>{state.snapshot.alerts.some(a => !a.read) && <button className="mr-button" onClick={() => { void radar.acknowledgeAlerts(state.snapshot.alerts.filter(a => !a.read).map(a => a.id)) }}>标记已读</button>}{state.snapshot.alerts.map(a => <div className="mr-alert-item" key={a.id}><span>{!a.read && '未读 · '}{a.text}</span><small>{new Date(a.at).toLocaleTimeString('zh-CN', { hour12: false })}</small></div>)}</>}
   </section>
 }
 function Settings({ radar }: { radar: RadarController }) {
@@ -178,8 +186,10 @@ function Dashboard({ radar }: { radar: RadarController }) {
   const rulesFor = useRef<string | undefined>(undefined)
   useEffect(() => {
     const select = (e: Event) => { setSelected((e as CustomEvent<string>).detail); setPage('list') }
+    const alerts = () => { rulesFor.current = undefined; setPage('rules') }
     window.addEventListener('market-radar-select', select)
-    return () => window.removeEventListener('market-radar-select', select)
+    window.addEventListener('market-radar-alerts', alerts)
+    return () => { window.removeEventListener('market-radar-select', select); window.removeEventListener('market-radar-alerts', alerts) }
   }, [])
   useEffect(() => {
     if (!state.open || radar.hidden) return
@@ -199,7 +209,7 @@ function Dashboard({ radar }: { radar: RadarController }) {
     {!state.bottomMounted && state.connected && <button className="mr-fallback" title="打开行情雷达" onClick={() => radar.setOpen(!state.open)}><Icon/><span>行情</span></button>}
     {state.open && <aside className="mr-panel" ref={panel} role="dialog" aria-modal="false" aria-label="行情雷达">
       <header className="mr-header"><div className="mr-header-title"><span className="mr-logo"><Icon size={20}/></span><div><h2>行情雷达</h2><p>黄金 · A 股 · 美股</p></div></div><div className="mr-header-actions"><IconButton icon="refresh" label="刷新行情" disabled={state.busy} onClick={() => { void radar.refresh() }}/><IconButton icon="hide" label="隐藏行情并静音（Ctrl/⌘+Shift+F9 恢复）" onClick={() => { void radar.toggleHidden() }}/><IconButton icon="close" label="关闭看板" onClick={() => radar.setOpen(false)}/></div></header>
-      <nav className="mr-navigation" aria-label="看板页面"><button className={page === 'list' ? 'mr-selected' : ''} onClick={() => { setPage('list'); setSelected(null) }}>自选行情</button><button className={page === 'rules' ? 'mr-selected' : ''} onClick={() => { rulesFor.current = undefined; setPage('rules') }}><Icon name="bell" size={14}/>提醒{config.alerts.some(a => a.enabled) && <span className="mr-nav-count">{config.alerts.filter(a => a.enabled).length}</span>}</button><button className={page === 'settings' ? 'mr-selected' : ''} onClick={() => setPage('settings')}><Icon name="settings" size={14}/>设置</button></nav>
+      <nav className="mr-navigation" aria-label="看板页面"><button className={page === 'list' ? 'mr-selected' : ''} onClick={() => { setPage('list'); setSelected(null) }}>自选行情</button><button className={page === 'rules' ? 'mr-selected' : ''} onClick={() => { rulesFor.current = undefined; setPage('rules') }}><Icon name="bell" size={14}/>提醒{state.snapshot.alerts.some(a => !a.read) && <span className="mr-nav-count">{state.snapshot.alerts.filter(a => !a.read).length}</span>}</button><button className={page === 'settings' ? 'mr-selected' : ''} onClick={() => setPage('settings')}><Icon name="settings" size={14}/>设置</button></nav>
       {(state.error || state.snapshot.storageError || !state.connected) && <div className="mr-banner" role="status">{state.error || state.snapshot.storageError || '正在连接行情服务…'}</div>}
       {state.notice && <div className="mr-success" role="status">{state.notice}</div>}
       <div className="mr-panel-scroll">
@@ -207,7 +217,8 @@ function Dashboard({ radar }: { radar: RadarController }) {
           <div className="mr-list-toolbar"><div className="mr-market-tabs" role="tablist" aria-label="市场筛选">{(['all', 'gold', 'cn', 'us'] as const).map(id => <button role="tab" aria-selected={tab === id} key={id} className={tab === id ? 'mr-selected' : ''} onClick={() => setTab(id)}>{id === 'all' ? '全部' : MARKET_LABEL[id]}</button>)}</div><IconButton icon="plus" label="添加自选" onClick={() => setPage('add')}/></div>
           <div className="mr-list-columns"><span>标的 / 代码</span><span>价格 / 涨跌幅</span></div>
           <div className="mr-watchlist">{list.map(i => {
-            const quote = state.snapshot.quotes[i.id]
+            const original = state.snapshot.quotes[i.id]
+            const quote = original && !state.connected ? { ...original, status: 'error' as const } : original
             const pinned = config.pinned.includes(i.id)
             return <div className="mr-quote-row" key={i.id}><button className="mr-quote-main" onClick={() => setSelected(i.id)}><div className="mr-quote-label"><span className={`mr-market-letter mr-tag-${i.market}`}>{i.market === 'gold' ? '金' : i.market === 'cn' ? 'A' : 'US'}</span><div><strong>{quote?.instrument.name ?? i.name}</strong><span>{i.symbol}<span className="mr-inline-dot">·</span>{quote ? STATUS_LABEL[quote.status] : state.snapshot.errors?.[i.id] ? '连接失败' : '等待报价'}</span></div></div><div className="mr-quote-value"><strong>{formatPrice(quote?.price)}</strong><Change quote={quote}/></div></button><IconButton icon="pin" label={pinned ? `取消固定 ${i.name}` : `固定 ${i.name} 到行情条`} active={pinned} disabled={state.busy} onClick={() => {
               void radar.save(c => { if (pinned) c.pinned = c.pinned.filter(id => id !== i.id); else { if (c.pinned.length >= 3) throw new Error('行情条已固定三只标的，请先取消一只'); c.pinned.push(i.id) } }).catch(() => {})
@@ -235,7 +246,7 @@ export function createRpcApi(ctx: ClientContext, signal: AbortSignal): RadarApi 
   }
   return {
     snapshot: () => call('snapshot'), save: config => call('save', { config }),
-    resolve: (market, symbol) => call('resolve', { market, symbol }), series: (instrumentId, range) => call('series', { instrumentId, range }),
+    resolve: (market, symbol) => call('resolve', { market, symbol }), candidates: symbol => call('candidates', { symbol }), acknowledgeAlerts: ids => call('acknowledgeAlerts', { ids }), series: (instrumentId, range) => call('series', { instrumentId, range }),
     refresh: () => call('refresh'), visibility: (clientId, open) => call('visibility', { clientId, open }),
   }
 }

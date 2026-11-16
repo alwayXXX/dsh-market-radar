@@ -27,6 +27,10 @@ export class MarketRadarService extends TypertRemoteService {
   save(config: RadarConfig) { return this.engine.save(config) }
   @Remote('resolve')
   resolve(market: Market, symbol: string) { return this.engine.resolve(market, symbol) }
+  @Remote('candidates')
+  candidates(symbol: string) { return this.engine.candidates(symbol) }
+  @Remote('acknowledgeAlerts')
+  acknowledgeAlerts(ids: string[]) { return this.engine.acknowledgeAlerts(ids) }
   @Remote('series')
   series(instrumentId: string, range?: ChartRange) {
     if (typeof instrumentId !== 'string' || instrumentId.length > 80) throw new Error('标的代码无效')

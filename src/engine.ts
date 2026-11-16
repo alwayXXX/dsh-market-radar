@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { AlertEngine } from './alerts.ts'
 import { defaultConfig, instrumentFor, validateConfig } from './config.ts'
 import { quoteStatus } from './market-time.ts'
@@ -6,7 +7,7 @@ import type { ConfigStore } from './storage.ts'
 import type { ChartRange, Market, PricePoint, PriceSeries, RadarConfig, RadarSnapshot } from './types.ts'
 
 export class RadarEngine {
-  private state: RadarSnapshot = { config: defaultConfig(), quotes: {}, alerts: [], errors: {}, updatedAt: new Date(0).toISOString() }
+  private state: RadarSnapshot = { config: defaultConfig(), quotes: {}, alerts: [], alertsRevision: 0, alertsEpoch: randomUUID(), errors: {}, updatedAt: new Date(0).toISOString() }
   private alertEngine = new AlertEngine()
   private samples = new Map<string, PricePoint[]>()
   private history = new Map<string, { series: PriceSeries; at: number }>()
@@ -60,7 +61,7 @@ export class RadarEngine {
       this.state.errors = Object.fromEntries(Object.entries(this.state.errors ?? {}).filter(([id]) => ids.has(id)))
       for (const id of this.samples.keys()) if (!ids.has(id)) this.samples.delete(id)
       for (const [key, value] of this.history) if (!ids.has(value.series.instrumentId)) this.history.delete(key)
-      if (next.hidden) this.state.alerts = []
+      if (next.hidden && this.state.alerts.length) { this.state.alerts = []; this.state.alertsRevision!++ }
       this.schedule()
       return this.snapshot()
     })
@@ -72,6 +73,25 @@ export class RadarEngine {
     const [q] = await this.provider.quotes([i], this.controller.signal)
     if (!q) throw new Error('未找到该标的，请核对市场和代码')
     return q.instrument
+  }
+  async candidates(symbol: string) {
+    if (typeof symbol !== 'string' || !/^\d{6}$/.test(symbol)) throw new Error('请输入六位 A 股代码')
+    const choices = ['sh', 'sz', 'bj'].map(prefix => instrumentFor('cn', `${prefix}${symbol}`))
+    const allowed = new Set(choices.map(i => i.id))
+    const quotes = await this.provider.quotes(choices, this.controller.signal)
+    return quotes.filter(q => allowed.has(q.instrument.id)).map(q => q.instrument)
+  }
+  async acknowledgeAlerts(ids: string[]): Promise<RadarSnapshot> {
+    await this.ready
+    if (!Array.isArray(ids) || ids.length > 30 || ids.some(id => typeof id !== 'string' || id.length > 160)) throw new Error('无效的提醒标识')
+    const selected = new Set(ids)
+    let changed = false
+    this.state.alerts = this.state.alerts.map(alert => {
+      if (!alert.read && selected.has(alert.id)) { changed = true; return { ...alert, read: true } }
+      return alert
+    })
+    if (changed) this.state.alertsRevision!++
+    return this.snapshot()
   }
   async refresh(force = false): Promise<RadarSnapshot> {
     await this.ready
@@ -114,7 +134,7 @@ export class RadarEngine {
     if (!this.disposed) {
       const quotes = (await this.snapshot()).quotes
       const events = this.alertEngine.evaluate(this.state.config.alerts, quotes, this.now(), this.state.config.hidden)
-      this.state.alerts = this.state.config.hidden ? [] : [...events, ...this.state.alerts].slice(0, 30)
+      if (events.length) { this.state.alerts = [...events, ...this.state.alerts].slice(0, 30); this.state.alertsRevision!++ }
       this.state.updatedAt = new Date(this.now()).toISOString()
     }
     return this.snapshot()

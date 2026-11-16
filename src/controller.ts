@@ -22,6 +22,7 @@ export class RadarController {
   private mutation: Promise<unknown> = Promise.resolve()
   private pendingSaves = 0
   private toggleSequence = 0
+  private retiredAlertEpochs = new Set<string>()
   readonly clientId = `radar-${crypto.randomUUID()}`
   constructor(readonly api: RadarApi) {}
   getSnapshot = (): ViewState => this.state
@@ -34,6 +35,12 @@ export class RadarController {
   get hidden(): boolean { return this.state.localHidden ?? this.state.snapshot.config.hidden }
   private accept(snapshot: RadarSnapshot): void {
     if (snapshot.config.revision < this.state.snapshot.config.revision) return
+    const currentEpoch = this.state.snapshot.alertsEpoch
+    if (snapshot.alertsEpoch && snapshot.alertsEpoch !== currentEpoch) {
+      if (this.retiredAlertEpochs.has(snapshot.alertsEpoch)) return
+      if (currentEpoch) this.retiredAlertEpochs.add(currentEpoch)
+    }
+    if (snapshot.alertsEpoch === this.state.snapshot.alertsEpoch && (snapshot.alertsRevision ?? 0) < (this.state.snapshot.alertsRevision ?? 0)) snapshot = { ...snapshot, alerts: this.state.snapshot.alerts, alertsRevision: this.state.snapshot.alertsRevision }
     if (!this.state.connected) this.patch({ error: '' })
     this.patch({ snapshot, connected: true })
   }
@@ -75,6 +82,10 @@ export class RadarController {
     try { this.accept(await this.api.refresh()) }
     catch (error) { this.patch({ error: error instanceof Error ? error.message : '刷新失败' }) }
     finally { this.patch({ busy: false }) }
+  }
+  async acknowledgeAlerts(ids: string[]): Promise<void> {
+    try { this.accept(await this.api.acknowledgeAlerts(ids)) }
+    catch (error) { this.patch({ error: error instanceof Error ? error.message : '无法标记提醒已读' }) }
   }
   notify(notice: string): void {
     clearTimeout(this.noticeTimer)

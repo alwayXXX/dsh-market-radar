@@ -2,13 +2,13 @@
 
 A compact gold, A-share and US-stock watchlist for the official DeepSeek Harness desktop app. A 28px ticker opens a watchlist with price charts, threshold alerts and user-reviewed quote snapshots that can be inserted into the current conversation draft.
 
-This checkout contains the `0.1.3-dev.0` prerelease; the stable npm release `0.1.2` does not include multi-range charts, directional percentage alerts or the ETF display fix. The new chart interaction has not yet been validated in the real DSH desktop UI.
+Version `0.1.3` fixes an incorrect gold previous-close field in the older `0.1.3-dev.0` prerelease. Representative chart and alert interactions were checked in the Windows DSH desktop app.
 
-Target runtime: **DSH 0.2.2-rc.3**, Node.js >=24.9.0. Install the stable release from npm with the bundled desktop CLI (`plugin --profile desktop add dsh-market-radar@0.1.2`), or use a prebuilt `.tgz` from GitHub Releases, then reload. To try the prerelease, specify `dsh-market-radar@0.1.3-dev.0` or `dsh-market-radar@next`.
+Target runtime: **DSH 0.2.2-rc.3**, Node.js >=24.9.0. Install from npm with the bundled desktop CLI (`plugin --profile desktop add dsh-market-radar@0.1.3`), or use a prebuilt `.tgz` from GitHub Releases, then reload.
 
 Fully quit the desktop app, including its tray process, before installing through its CLI. The hide shortcut is registered in the native DSH catalog: Ctrl+Shift+F9 on Windows and Command+Shift+F9 on macOS. A Windows user confirmed that Ctrl+Shift+F9 hides and restores the ticker.
 
-- Pin up to three instruments. Add explicit A-share exchange prefixes (`sh600519`, `sz000001`) and US tickers (`AAPL`, `VOO`).
+- Pin up to three instruments. Enter an explicit A-share exchange prefix (`sh600519`, `sz000001`), or look up candidates for a six-digit A-share code; US tickers include `AAPL` and `VOO`.
 - Gold quotes keep XAU in USD/troy ounce and Au99.99 in CNY/gram separate.
 - Price line charts offer 1 day, 5 days, 1 month, 6 months, year to date (YTD), 1 year, 5 years and Max, with time-axis ticks, hover and keyboard readings. Max is limited to history returned within the provider and request limits. The actual source, resolution and covered interval are shown.
 - Tencent supplies stock quotes, daily minute charts and A-share history; Sina supplies gold quotes and XAU history. Yahoo Finance supplies US five-day and daily history, and the Shanghai Gold Exchange supplies Au99.99 daily history. These public feeds require no market-data credentials.
@@ -19,7 +19,7 @@ Fully quit the desktop app, including its tray process, before installing throug
 - Review a snapshot, then insert it into the current editable conversation draft. Existing text and attachments remain; the user submits it.
 - Settings are local and profile-specific. Monitoring requires a running DSH process and an awake computer.
 
-Free upstream feeds can be delayed, unavailable or change format. Recurring trading hours do not cover every holiday or exceptional closure. The ticker, hide shortcut and draft insertion were checked in the Windows desktop app; the newer multi-range chart and live market alert triggers still need desktop validation.
+Free upstream feeds can be delayed, unavailable or change format. Recurring trading hours do not cover every holiday or exceptional closure. The ticker, hide shortcut, draft insertion, representative multi-range charts and an intraday alert were checked in the Windows desktop app. The checks do not establish long-term availability for every market or feed.
 
 ## Disclaimer
 

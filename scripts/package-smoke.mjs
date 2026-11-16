@@ -44,12 +44,15 @@ const context = new Context()
 host.apply(context, { dataDir: join(work, 'data') })
 await context.fiber.dispose()
 const serviceContext = new Context()
-const service = new host.MarketRadarService(serviceContext, { async series(instrumentId, range) { return { instrumentId, range } } })
+const service = new host.MarketRadarService(serviceContext, { async series(instrumentId, range) { return { instrumentId, range } }, async candidates(symbol) { return [symbol] }, async acknowledgeAlerts(ids) { return ids } })
 assert.deepEqual(await service.series('gold:XAU', 'max'), { instrumentId: 'gold:XAU', range: 'max' })
+assert.deepEqual(await service.candidates('000001'), ['000001'])
+assert.deepEqual(await service.acknowledgeAlerts(['event-1']), ['event-1'])
 await serviceContext.fiber.dispose()
 let client
-const styles = new Set(), slots = new Set(), listeners = new Set(), commands = new Map(), effects = []
-let remoteSnapshot = { config: { version: 1, revision: 0, hidden: false, instruments: [], alerts: [], pinned: [], colorMode: 'red-up' }, quotes: {}, alerts: [], updatedAt: '' }
+const styles = new Set(), slots = new Set(), slotComponents = new Map(), listeners = new Set(), commands = new Map(), effects = []
+const xau = { id: 'gold:XAU', market: 'gold', symbol: 'XAU', name: '国际现货金', currency: 'USD', unit: '盎司' }
+let remoteSnapshot = { config: { version: 1, revision: 0, hidden: false, instruments: [xau], alerts: [], pinned: [xau.id], colorMode: 'red-up' }, quotes: { [xau.id]: { instrument: xau, price: 100, previousClose: 99, change: 1, changePercent: 1, source: '测试来源', asOf: '2026-11-16T04:42:00Z', receivedAt: '2026-11-16T04:42:30Z', status: 'live' } }, alerts: [{ id: 'event-1', ruleId: 'r', instrumentId: xau.id, text: '测试提醒', at: '2026-11-16T04:42:30Z' }], updatedAt: '' }
 const document = { head: { append(style) { styles.add(style) } }, createElement() { return { dataset: {}, remove() { styles.delete(this) } } }, addEventListener(name) { listeners.add(name) }, removeEventListener(name) { listeners.delete(name) } }
 const clientBundle = await readFile(join(dirname(manifestFile), 'lib/client.js'), 'utf8')
 assert.doesNotMatch(clientBundle, /Ctrl\s*\+\s*Alt\s*\+\s*M/i, 'client must not display the removed shortcut')
@@ -64,7 +67,13 @@ assert.equal((await adapter.series('gold:XAU', 'ytd')).range, 'ytd')
 assert.equal(observedSeriesCall.endpoint, 'marketRadar/series')
 assert.equal(observedSeriesCall.payload.args.instrumentId, 'gold:XAU')
 assert.equal(observedSeriesCall.payload.args.range, 'ytd')
-client.apply({ effect(fn) { effects.push(fn()) }, shortcuts: { register(command) { commands.set(command.id, command); return () => commands.delete(command.id) } }, slots: { inject(name, fn) { effects.push(fn()) }, register(spec) { slots.add(spec.name); return () => slots.delete(spec.name) } }, connection: { rpc: { async call(channel, endpoint, payload) {
+await adapter.candidates('000001')
+assert.equal(observedSeriesCall.endpoint, 'marketRadar/candidates')
+assert.equal(observedSeriesCall.payload.args.symbol, '000001')
+await adapter.acknowledgeAlerts(['event-1'])
+assert.equal(observedSeriesCall.endpoint, 'marketRadar/acknowledgeAlerts')
+assert.equal(observedSeriesCall.payload.args.ids[0], 'event-1')
+client.apply({ effect(fn) { effects.push(fn()) }, shortcuts: { register(command) { commands.set(command.id, command); return () => commands.delete(command.id) } }, slots: { inject(name, fn) { effects.push(fn()) }, register(spec, component) { slots.add(spec.name); slotComponents.set(spec.name, component); return () => slots.delete(spec.name) } }, connection: { rpc: { async call(channel, endpoint, payload) {
   if (endpoint.endsWith('/save')) remoteSnapshot = { ...remoteSnapshot, config: { ...structuredClone(payload.args.config), revision: remoteSnapshot.config.revision + 1 } }
   return { ok: true, value: endpoint.endsWith('/snapshot') || endpoint.endsWith('/save') ? structuredClone(remoteSnapshot) : null }
 } } } })
@@ -72,6 +81,12 @@ assert.equal(styles.size, 1); assert.equal(slots.size, 3); assert.equal(commands
 assert.equal(commands.get('market-radar.toggle-visibility').defaults['desktop:windows'].code, 'F9')
 assert.deepEqual(Array.from(commands.get('market-radar.toggle-visibility').defaults['desktop:windows'].modifiers), ['primary', 'shift'])
 await new Promise(resolve => setImmediate(resolve))
+const { createElement } = rootRequire('react')
+const { renderToStaticMarkup } = rootRequire('react-dom/server')
+const tickerMarkup = renderToStaticMarkup(createElement(slotComponents.get('shell.bottom')))
+assert.match(tickerMarkup, /测试来源/)
+assert.match(tickerMarkup, /2026\/11\/16 12:42:00/)
+assert.match(tickerMarkup, /1 条未读提醒/)
 commands.get('market-radar.toggle-visibility').resolve().run()
 await new Promise(resolve => setImmediate(resolve))
 assert.equal(remoteSnapshot.config.hidden, true, 'native command action hides through the actual client RPC adapter')

@@ -24,6 +24,21 @@ test('Tencent history verifies symbol, reads unadjusted close, and keeps trading
   assert.equal(parseTencentDaily({ code: 0, data: { sh600519: { qfqday: [['2026-11-13', '99', '101']] } } }, cn).length, 0)
 })
 
+test('intraday history omits provider points later than the current time', async () => {
+  const fetcher: typeof fetch = async input => {
+    const rows = ['1305 100', '1306 101']
+    const payload = String(input).includes('/day/query')
+      ? { code: 0, data: { sh600519: { data: [{ date: '20261116', data: rows }] } } }
+      : { code: 0, data: { sh600519: { data: { date: '20261116', data: rows } } } }
+    return new Response(JSON.stringify(payload))
+  }
+  const provider = new PublicMarketProvider(fetcher, () => at('20261116130525'))
+  const oneDay = await provider.series(cn, AbortSignal.timeout(5000))
+  const fiveDay = await provider.history(cn, '5d', AbortSignal.timeout(5000))
+  assert.deepEqual(oneDay.map(p => p.price), [100])
+  assert.deepEqual(fiveDay.points.map(p => p.price), [100])
+})
+
 test('gold histories parse inert data with distinct USD and CNY sources', () => {
   const xau = parseSinaGoldDaily('/*<script>ignored</script>*/var _data=([{"date":"2026-11-13","close":"3879.92"}]);')
   const au = parseSgeDaily({ time: [['2026-11-13', 847.8, 837.55, 829.98, 857.8]] })

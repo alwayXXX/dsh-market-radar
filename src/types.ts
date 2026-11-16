@@ -44,7 +44,7 @@ export interface AlertRule {
   enabled: boolean
   cooldownMinutes: number
 }
-export interface AlertEvent { id: string; ruleId: string; instrumentId: string; text: string; at: string }
+export interface AlertEvent { id: string; ruleId: string; instrumentId: string; text: string; at: string; read?: boolean }
 export interface RadarConfig {
   version: 1
   revision: number
@@ -58,6 +58,8 @@ export interface RadarSnapshot {
   config: RadarConfig
   quotes: Record<string, Quote>
   alerts: AlertEvent[]
+  alertsRevision?: number
+  alertsEpoch?: string
   updatedAt: string
   errors?: Record<string, string>
   storageError?: string
@@ -66,6 +68,8 @@ export interface RadarApi {
   snapshot(): Promise<RadarSnapshot>
   save(config: RadarConfig): Promise<RadarSnapshot>
   resolve(market: Market, symbol: string): Promise<Instrument>
+  candidates(symbol: string): Promise<Instrument[]>
+  acknowledgeAlerts(ids: string[]): Promise<RadarSnapshot>
   series(instrumentId: string, range?: ChartRange): Promise<PriceSeries>
   refresh(): Promise<RadarSnapshot>
   visibility(clientId: string, open: boolean): Promise<void>

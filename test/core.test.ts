@@ -5,7 +5,7 @@ import { sourceTime, quoteStatus, scheduledClosed } from '../src/market-time.ts'
 import { parseTencent, parseSina, parseGoldSeries, parseTencentSeries, sanitizePoints } from '../src/providers.ts'
 import { AlertEngine } from '../src/alerts.ts'
 import { RadarEngine } from '../src/engine.ts'
-import { formatPrice, snapshotText } from '../src/snapshot.ts'
+import { formatPrice, quoteTooltip, snapshotText } from '../src/snapshot.ts'
 import type { AlertRule, Instrument, Quote, RadarConfig } from '../src/types.ts'
 import type { ConfigStore } from '../src/storage.ts'
 
@@ -39,10 +39,12 @@ test('parses multiple adjacent Tencent rows, rejecting malformed or zero prices'
   assert.equal(parseTencent('v_sh600519="1~truncated";', [cn], now).length, 0)
 })
 test('gold keeps source units and uses previous close rather than opening price', () => {
-  const rows = parseSina('var hq_str_hf_XAU="101,0,101,102,105,99,10:00:00,98,100,0,0,0,2026-11-16,伦敦金";var hq_str_gds_AU9999="501,0,500,501,505,499,10:00:00,490,500,0,0,0,2026-11-16,沪金99";', [gold, instrumentFor('gold', 'AU9999')], now)
+  const rows = parseSina('var hq_str_hf_XAU="101,0,101,102,105,99,10:00:00,100,98,0,0,0,2026-11-16,伦敦金";var hq_str_gds_AU9999="501,0,500,501,505,499,10:00:00,500,490,0,0,0,2026-11-16,沪金99";', [gold, instrumentFor('gold', 'AU9999')], now)
   assert.equal(rows.length, 2); assert.equal(rows[0].previousClose, 100); assert.equal(rows[0].changePercent, 1)
   assert.equal(rows[0].instrument.unit, '盎司'); assert.equal(rows[1].instrument.unit, '克')
   assert.equal(rows[1].previousClose, 500)
+  const [missing] = parseSina('var hq_str_hf_XAU="101,0,101,102,105,99,10:00:00,,98,0,0,0,2026-11-16,伦敦金";', [gold], now)
+  assert.equal(missing.previousClose, null); assert.equal(missing.changePercent, null)
 })
 test('indices use points and provider-identified ETFs retain fund units', () => {
   assert.equal(instrumentFor('cn', 'sh000300').unit, '点')
@@ -152,6 +154,19 @@ test('alerts require a fresh crossing, respect cooldown and do not repeat a sati
   assert.equal(run(115, now + 75_000).length, 0)
   assert.equal(run(120, now + 16 * 60_000).length, 0)
 })
+test('a changed price with the same source timestamp can cross once without replaying hidden events', () => {
+  const e = new AlertEngine()
+  const run = (price: number, seconds: number, hidden = false) => e.evaluate([rule], { [cn.id]: quote(price, now) }, now + seconds * 1000, hidden)
+  assert.equal(run(100, 0).length, 0)
+  assert.equal(run(115, 15).length, 1, 'crossing on a minute-precision timestamp is detected')
+  assert.equal(run(115, 30).length, 0, 'repeated identical quote is ignored')
+  assert.equal(run(100, 45).length, 0)
+  assert.equal(run(115, 60).length, 0, 'cooldown still applies')
+  const hidden = new AlertEngine()
+  assert.equal(hidden.evaluate([rule], { [cn.id]: quote(100, now) }, now, false).length, 0)
+  assert.equal(hidden.evaluate([rule], { [cn.id]: quote(115, now) }, now + 15_000, true).length, 0)
+  assert.equal(hidden.evaluate([rule], { [cn.id]: quote(116, now) }, now + 30_000, false).length, 0)
+})
 test('hidden crossings stay muted after restore, stale and reconnect quotes only establish baseline', () => {
   const e = new AlertEngine()
   e.evaluate([rule], { [cn.id]: quote(100) }, now, false)
@@ -166,10 +181,49 @@ test('snapshot carries source and timestamp and does not turn unavailable change
   const text = snapshotText([{ ...quote(101), changePercent: null, status: 'delayed' }])
   assert.match(text, /来源：test/); assert.match(text, /源站时间/); assert.match(text, /涨跌幅：未知/); assert.match(text, /报价已延迟/)
 })
+test('ticker tooltip identifies the source, market timezone and missing data', () => {
+  const value = quoteTooltip('茅台', { ...quote(101), source: '腾讯财经', status: 'delayed' })
+  assert.match(value, /报价已延迟/); assert.match(value, /来源：腾讯财经/); assert.match(value, /2026\/11\/16 10:00:00（北京时间）/)
+  assert.match(quoteTooltip('苹果', { ...quote(101, now, us), asOf: null }), /源站时间：未知/)
+  assert.match(quoteTooltip('茅台', undefined, 'offline'), /连接失败/)
+})
 function memoryStore(initial = defaultConfig()): ConfigStore {
   let config = structuredClone(initial)
   return { load: async () => ({ config: structuredClone(config) }), save: async next => { config = structuredClone(next) } }
 }
+test('six-digit A-share lookup retains distinct valid exchange identities', async () => {
+  let requested: string[] = []
+  const e = new RadarEngine(memoryStore(), { quotes: async list => {
+    requested = list.map(i => i.symbol)
+    return list.filter(i => i.symbol !== 'bj000001').map(i => ({ ...quote(101, now, i), instrument: { ...i, name: i.symbol === 'sh000001' ? '上证指数' : '平安银行' } }))
+  }, series: async () => [] }, () => now)
+  try {
+    const candidates = await e.candidates('000001')
+    assert.deepEqual(requested, ['sh000001', 'sz000001', 'bj000001'])
+    assert.deepEqual(candidates.map(i => [i.symbol, i.name]), [['sh000001', '上证指数'], ['sz000001', '平安银行']])
+    await assert.rejects(() => e.candidates('sh000001'), /六位/)
+  } finally { e.dispose() }
+})
+test('acknowledging selected alerts preserves other events and configured rules', async () => {
+  const config = defaultConfig(), instrument = config.instruments.find(i => i.id === 'cn:sh000001')!
+  config.alerts = [{ ...rule, instrumentId: instrument.id, cooldownMinutes: 1 }]
+  let time = now, price = 100
+  const e = new RadarEngine(memoryStore(config), { quotes: async list => list.map(i => quote(price, time, i)), series: async () => [] }, () => time)
+  try {
+    await e.refresh(true); time += 15_000; price = 115
+    const first = await e.refresh(true)
+    assert.equal(first.alerts.length, 1)
+    time += 15_000; price = 100; await e.refresh(true)
+    time += 60_000; price = 115; const second = await e.refresh(true)
+    assert.equal(second.alerts.length, 2)
+    const acknowledged = await e.acknowledgeAlerts([first.alerts[0].id])
+    assert.equal(acknowledged.alerts.find(a => a.id === first.alerts[0].id)?.read, true)
+    assert.notEqual(acknowledged.alerts[0].id, first.alerts[0].id)
+    assert.notEqual(acknowledged.alerts[0].read, true)
+    assert.equal(acknowledged.config.alerts.length, 1)
+    assert.ok((acknowledged.alertsRevision ?? 0) > (second.alertsRevision ?? 0))
+  } finally { e.dispose() }
+})
 test('engine isolates failed markets, preserves last quote and rejects stale writes', async () => {
   let fail = false
   const e = new RadarEngine(memoryStore(), {
@@ -181,6 +235,10 @@ test('engine isolates failed markets, preserves last quote and rejects stale wri
   const state = await e.refresh(true)
   assert.equal(state.quotes['gold:XAU'].price, 101); assert.equal(state.quotes['gold:XAU'].status, 'error')
   assert.notEqual(state.quotes['cn:sh000001'].status, 'error')
+  fail = false
+  const recovered = await e.refresh(true)
+  assert.notEqual(recovered.quotes['gold:XAU'].status, 'error')
+  assert.equal(recovered.errors?.['gold:XAU'], undefined)
   const next = structuredClone(state.config); next.colorMode = 'green-up'
   await e.save(next)
   await assert.rejects(e.save(next), /其他窗口/)

@@ -8,7 +8,7 @@ function apiFixture() {
   const api: RadarApi = {
     snapshot: async () => structuredClone(snapshot),
     save: async config => { snapshot = { ...snapshot, config: { ...structuredClone(config), revision: snapshot.config.revision + 1 } }; return structuredClone(snapshot) },
-    resolve: async () => { throw new Error('unused') }, series: async () => { throw new Error('unused') },
+    resolve: async () => { throw new Error('unused') }, candidates: async () => [], acknowledgeAlerts: async () => structuredClone(snapshot), series: async () => { throw new Error('unused') },
     refresh: async () => structuredClone(snapshot), visibility: async () => {},
   }
   return { api, read: () => structuredClone(snapshot) }
@@ -61,4 +61,46 @@ test('hiding remains immediate when local persistence is unavailable', async t =
   assert.equal(controller.hidden, true)
   assert.equal(controller.getSnapshot().open, false)
   assert.match(controller.getSnapshot().error, /read-only/)
+})
+test('an older poll cannot restore unread alerts after acknowledgement', async t => {
+  const { api, read } = apiFixture()
+  const event = { id: 'one', ruleId: 'r', instrumentId: 'gold:XAU', text: 'test', at: '2026-11-16T00:00:00Z' }
+  const old = { ...read(), alerts: [event], alertsRevision: 1 }
+  api.snapshot = async () => structuredClone(old)
+  const controller = new RadarController(api)
+  t.after(() => controller.dispose())
+  await controller.poll()
+  let release: (value: RadarSnapshot) => void = () => {}
+  api.snapshot = () => new Promise(resolve => { release = resolve })
+  const pending = controller.poll()
+  api.acknowledgeAlerts = async () => ({ ...old, alerts: [{ ...event, read: true }], alertsRevision: 2 })
+  await controller.acknowledgeAlerts(['one'])
+  release(old); await pending
+  assert.equal(controller.getSnapshot().snapshot.alerts[0].read, true)
+})
+test('a restarted host can reset the transient alert list and revision', async t => {
+  const { api, read } = apiFixture()
+  const old = { ...read(), alerts: [{ id: 'one', ruleId: 'r', instrumentId: 'gold:XAU', text: 'test', at: '' }], alertsRevision: 5, alertsEpoch: 'before' }
+  api.snapshot = async () => structuredClone(old)
+  const controller = new RadarController(api)
+  t.after(() => controller.dispose())
+  await controller.poll()
+  api.snapshot = async () => ({ ...old, alerts: [], alertsRevision: 0, alertsEpoch: 'after' })
+  await controller.poll()
+  assert.deepEqual(controller.getSnapshot().snapshot.alerts, [])
+})
+test('a late response from the previous host does not restore old alerts', async t => {
+  const { api, read } = apiFixture()
+  const old = { ...read(), alerts: [{ id: 'one', ruleId: 'r', instrumentId: 'gold:XAU', text: 'test', at: '' }], alertsRevision: 5, alertsEpoch: 'before' }
+  api.snapshot = async () => structuredClone(old)
+  const controller = new RadarController(api)
+  t.after(() => controller.dispose())
+  await controller.poll()
+  let release: (value: RadarSnapshot) => void = () => {}
+  api.snapshot = () => new Promise(resolve => { release = resolve })
+  const pending = controller.poll()
+  api.acknowledgeAlerts = async () => ({ ...old, alerts: [], alertsRevision: 0, alertsEpoch: 'after' })
+  await controller.acknowledgeAlerts([])
+  release(old); await pending
+  assert.deepEqual(controller.getSnapshot().snapshot.alerts, [])
 })

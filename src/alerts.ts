@@ -1,5 +1,5 @@
 import type { AlertEvent, AlertRule, Quote } from './types.ts'
-interface RuleState { fingerprint: string; inside: boolean; lastAt: number; lastQuote: number }
+interface RuleState { fingerprint: string; inside: boolean; lastAt: number; lastQuote: number; lastValue: number }
 export class AlertEngine {
   private state = new Map<string, RuleState>()
   reset(): void { this.state.clear() }
@@ -23,10 +23,11 @@ export class AlertEngine {
       const stamp = Date.parse(q.asOf)
       const fingerprint = `${rule.instrumentId}:${rule.kind}:${rule.value}:${rule.cooldownMinutes}`
       if (!old || old.fingerprint !== fingerprint || now - old.lastQuote > 180_000 || stamp < old.lastQuote) {
-        this.state.set(rule.id, { fingerprint, inside, lastAt: old?.lastAt ?? 0, lastQuote: stamp })
+        this.state.set(rule.id, { fingerprint, inside, lastAt: old?.lastAt ?? 0, lastQuote: stamp, lastValue: value })
         continue
       }
-      if (stamp === old.lastQuote) continue
+      // Some feeds update price several times while retaining a minute-precision timestamp.
+      if (stamp === old.lastQuote && value === old.lastValue) continue
       if (inside && !old.inside && now - old.lastAt >= rule.cooldownMinutes * 60_000 && !hidden) {
         old.lastAt = now
         const condition = rule.kind === 'above' ? `价格达到或高于 ${rule.value}`
@@ -37,6 +38,7 @@ export class AlertEngine {
       }
       old.inside = inside
       old.lastQuote = stamp
+      old.lastValue = value
     }
     return events
   }

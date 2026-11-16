@@ -1,5 +1,12 @@
 import type { Quote } from './types.ts'
 export const STATUS_LABEL = { live: '最新报价', closed: '常规休市时段', delayed: '报价已延迟', error: '连接失败', unknown: '状态未知' }
+export function quoteTooltip(name: string, quote?: Quote, error?: string): string {
+  if (!quote) return `${name} · ${error ? '连接失败' : '等待报价'}`
+  const zone = quote.instrument.market === 'us' ? 'America/New_York' : 'Asia/Shanghai'
+  const stamp = quote.asOf ? Date.parse(quote.asOf) : NaN
+  const asOf = Number.isFinite(stamp) ? new Intl.DateTimeFormat('zh-CN', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(stamp) : '未知'
+  return `${name} · ${STATUS_LABEL[quote.status]}\n来源：${quote.source}\n源站时间：${asOf}${Number.isFinite(stamp) ? (zone === 'America/New_York' ? '（纽约时间）' : '（北京时间）') : ''}`
+}
 export function snapshotText(quotes: Quote[]): string {
   const rows = quotes.map(q => [
     `- ${q.instrument.name}（${q.instrument.symbol}，${q.instrument.market === 'gold' ? '黄金' : q.instrument.market === 'cn' ? 'A股' : '美股'}）`,

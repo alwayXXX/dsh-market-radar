@@ -31,7 +31,8 @@ export function parseSina(body: string, instruments: Instrument[], now = Date.no
     if (!f || f.length < 14) return []
     const price = positive(f[0])
     if (price === null) return []
-    const previousClose = positive(f[8])
+    // Sina's field 7 matches the preceding daily close for both hf_XAU and gds_AU9999.
+    const previousClose = positive(f[7])
     const asOf = sourceTime(`${f[12]} ${f[6]}`, 'Asia/Shanghai')
     const change = previousClose === null ? null : price - previousClose
     return [{ instrument: i, price, previousClose, change, changePercent: change === null ? null : change / previousClose! * 100, source: '新浪财经', asOf, receivedAt: new Date(now).toISOString(), status: quoteStatus(i, asOf, now) }]
@@ -211,17 +212,17 @@ export class PublicMarketProvider implements MarketProvider {
   async series(i: Instrument, signal: AbortSignal): Promise<PricePoint[]> {
     if (i.market === 'gold') {
       if (i.symbol !== 'XAU') return []
-      return parseGoldSeries(await this.text('https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_data=/GlobalFuturesService.getGlobalFuturesMinLine?symbol=XAU&type=1', signal))
+      return parseGoldSeries(await this.text('https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_data=/GlobalFuturesService.getGlobalFuturesMinLine?symbol=XAU&type=1', signal)).filter(p => p.time <= this.now())
     }
     const method = i.market === 'us' ? 'UsMinute' : 'minute'
     const text = await this.text(`https://web.ifzq.gtimg.cn/appstock/app/${method}/query?code=${tencentCode(i)}`, signal)
-    return parseTencentSeries(JSON.parse(text), i)
+    return parseTencentSeries(JSON.parse(text), i).filter(p => p.time <= this.now())
   }
   async history(i: Instrument, range: Exclude<ChartRange, '1d'>, signal: AbortSignal): Promise<HistoricalSeries> {
     if (i.market === 'cn') {
       if (range === '5d') {
         const raw = await this.text(`https://web.ifzq.gtimg.cn/appstock/app/day/query?code=${tencentCode(i)}`, signal)
-        return { points: parseTencentFiveDay(JSON.parse(raw), i), source: '腾讯财经', granularity: 'minute', note: '最近 5 个交易日分时' }
+        return { points: parseTencentFiveDay(JSON.parse(raw), i).filter(p => p.time <= this.now()), source: '腾讯财经', granularity: 'minute', note: '最近 5 个交易日分时' }
       }
       const count = range === 'max' ? 2000 : range === '5y' ? 1500 : 320
       const all: PricePoint[] = []
