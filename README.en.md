@@ -1,30 +1,59 @@
 # DSH Market Radar
 
-A compact gold, A-share and US-stock watchlist for the official DeepSeek Harness desktop app. A 28px ticker opens a watchlist with price charts, threshold alerts and user-reviewed quote snapshots that can be inserted into the current conversation draft.
+Watch gold, mainland China A-shares and US market quotes in the DeepSeek Harness desktop app. Pin up to three instruments to the bottom ticker, then open the watchlist for price charts, threshold alerts and quote snapshots for chat drafts.
 
-Version `0.1.3` fixes an incorrect gold previous-close field in the older `0.1.3-dev.0` prerelease. Representative chart and alert interactions were checked in the Windows DSH desktop app.
+[中文说明](https://github.com/alwayXXX/dsh-market-radar/blob/main/README.md) · [Plugin directory](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/data/plugins/alwayXXX__dsh-market-radar.yml) · [npm](https://www.npmjs.com/package/dsh-market-radar) · [Changelog](https://github.com/alwayXXX/dsh-market-radar/blob/main/CHANGELOG.md)
 
-Target runtime: **DSH 0.2.2-rc.3**, Node.js >=24.9.0. Install from npm with the bundled desktop CLI (`plugin --profile desktop add dsh-market-radar@0.1.4`), or use a prebuilt `.tgz` from GitHub Releases, then reload.
+## Install
 
-Fully quit the desktop app, including its tray process, before installing through its CLI. The hide shortcut is registered in the native DSH catalog: Ctrl+Shift+F9 on Windows and Command+Shift+F9 on macOS. A Windows user confirmed that Ctrl+Shift+F9 hides and restores the ticker.
+Verified on **Windows with DeepSeek Harness 0.2.2-rc.3**. The package requires Node.js 24.9.0 or later. Select a local `.tgz` on the desktop Plugins page, or install from npm with the CLI bundled with the desktop app.
 
-- Pin up to three instruments. Enter an explicit A-share exchange prefix (`sh600519`, `sz000001`), or look up candidates for a six-digit A-share code; US tickers include `AAPL` and `VOO`.
-- Gold quotes keep XAU in USD/troy ounce and Au99.99 in CNY/gram separate.
-- Price line charts offer 1 day, 5 days, 1 month, 6 months, year to date (YTD), 1 year, 5 years and Max, with time-axis ticks, hover and keyboard readings. Max is limited to history returned within the provider and request limits. The actual source, resolution and covered interval are shown.
-- Tencent supplies stock quotes, daily minute charts and A-share history; Sina supplies gold quotes and XAU history. Yahoo Finance supplies US five-day and daily history, and the Shanghai Gold Exchange supplies Au99.99 daily history. These public feeds require no market-data credentials.
-- Five-day stock charts use intraday data, but gold uses daily points. Longer ranges use daily close points; the current day's point may still change. Tencent A-share daily prices are unadjusted; Yahoo US close adjustment treatment is determined by the provider. Some special US symbols lack historical coverage.
-- Au99.99's one-day view uses runtime samples rather than complete historical minute data. One-day charts can fall back to runtime samples; missing history and intervals are not fabricated.
-- Alerts establish a baseline before notifying on a fresh price or directional daily-change threshold crossing, with a 15-minute default cooldown. Existing absolute-change rules remain supported; stale quotes do not trigger alerts. Enter a positive threshold (for example, `3` for a fall of 3%). Older versions cannot read the new directional rules; export your settings and remove those rules before downgrading.
-- **Ctrl+Shift+F9** hides all plugin price surfaces and mutes alerts. Restore does not replay hidden-period notifications.
-- Review a snapshot, then insert it into the current editable conversation draft. Existing text and attachments remain; the user submits it.
-- Settings are local and profile-specific. Monitoring requires a running DSH process and an awake computer.
+Before using the CLI, fully quit DSH, including its tray process. Replace the installation path in this example, run the command, then reopen DSH.
 
-Free upstream feeds can be delayed, unavailable or change format. Recurring trading hours do not cover every holiday or exceptional closure. The ticker, hide shortcut, draft insertion, representative multi-range charts and an intraday alert were checked in the Windows desktop app. The checks do not establish long-term availability for every market or feed.
+```powershell
+& 'path-to-dsh-installation\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add 'dsh-market-radar@0.1.4'
+```
+
+To install a prebuilt `.tgz` from [GitHub Releases](https://github.com/alwayXXX/dsh-market-radar/releases), replace `dsh-market-radar@0.1.4` with the absolute path to the archive. Use the matching CLI and the `web` profile for the browser build. The main interaction flows were verified in the Windows desktop app.
+
+## Use the watchlist
+
+1. Click the bottom ticker to open the panel. If another plugin occupies the bottom slot, use the market button at the top right. Click outside the panel or press `Esc` to close it.
+2. Click `+` to add an instrument. For A-shares, enter a six-digit code and confirm the matching exchange, or enter a prefixed symbol such as `sh600519`. `sh000001` is the Shanghai Composite and `sz000001` is Ping An Bank. For US markets, enter a symbol such as `AAPL` or `VOO`. Gold symbols are `XAU` (USD/troy oz) and `AU9999` (CNY/g).
+3. Pin instruments to the ticker. Use row menus to reorder, set alerts or remove instruments. Settings include color conventions and JSON configuration import and export.
+4. Select an instrument to see its price chart. Switch among **1 day, 5 days, 1 month, 6 months, year to date (YTD), 1 year, 5 years and Max**. Use the pointer or arrow keys to inspect prices.
+5. With an editable DSH conversation open, prepare and preview a quote snapshot from the instrument details, then insert it into the draft. Existing text and attachments are preserved. You send the draft when ready.
+
+### Alerts and hide mode
+
+Set price or daily percentage change thresholds. The first valid quote establishes a baseline after startup, rule activation, a threshold edit or connection recovery. An in-app alert is recorded when a fresh quote crosses into the trigger range. The cooldown defaults to 15 minutes and can be set to 1–1440 minutes. Mark alerts as read from the panel.
+
+Enter a positive number for percentage thresholds. For example, enter `3` in a daily decline rule to trigger at −3% or lower. An absolute daily move rule applies in both directions. Before downgrading to 0.1.2 or earlier, export the configuration and remove any directional percentage rules.
+
+While the DSH window has focus, press **Ctrl+Shift+F9** (Windows) or **Command+Shift+F9** (macOS) to hide and mute the plugin. Press it again to restore it. The shortcut can be changed in DSH settings. Monitoring requires DSH to be running and the computer to be awake. Quotes can continue updating while hidden, and alerts from that period are not replayed.
+
+## Data and privacy
+
+| Use | Source |
+| --- | --- |
+| A-share and US quotes and same-day intraday history, plus A-share five-day and daily history | Tencent Finance (`qt.gtimg.cn`, `web.ifzq.gtimg.cn`) |
+| Gold quotes, plus XAU intraday and daily history | Sina Finance (`hq.sinajs.cn`, `stock2.finance.sina.com.cn`) |
+| US five-day and daily history | Yahoo Finance (`query1.finance.yahoo.com`) |
+| Au99.99 daily history | Shanghai Gold Exchange (`www.sge.com.cn`) |
+
+- Quotes normally refresh every 15 seconds while the panel is open or an alert is enabled, and every 60 seconds otherwise. Failed requests back off. Stale quotes remain visible and do not trigger alerts. The trading-hours estimate can show quotes as delayed on holidays or early closes.
+- Charts show the source, sampling interval and actual coverage, with gaps visible. The one-day view shows a previous-close line when available. Au99.99 uses runtime quote samples for its one-day chart. Other instruments can fall back to samples if intraday history is unavailable. Five-day gold charts use daily points.
+- Longer ranges use daily closes, and the current day's point may still change. Max depends on the history available from the provider. A-share daily prices are unadjusted, while US charts use the provider's `close` field. Some symbols lack historical coverage.
+- The local DSH host requests quotes without market-data credentials. Providers may receive the requested symbols and network address. Settings are saved locally per profile. Once you send a snapshot in a draft, DSH handles it according to its model settings.
 
 ## Disclaimer
 
 This plugin is for personal market information only and does not constitute investment or trading advice, or a promise of returns. Third-party data may be delayed, incorrect, interrupted or missing; alerts may be delayed or fail because of network, device, software or data-source issues. Accuracy, completeness and timeliness are not guaranteed. Refer to the exchange and relevant service providers for authoritative information. Users make their own investment decisions and bear the associated risks.
 
-Development: `pnpm install`, `pnpm check`, `pnpm smoke:live`, `pnpm smoke:history`, `pnpm smoke:package`, `pnpm dev`. The development fixture at `http://127.0.0.1:4188` is not the real DSH UI.
+## Uninstall and develop
 
-[中文说明](README.md) · [MIT](LICENSE)
+Remove the plugin from the DSH Plugins page, or use the same CLI and profile as for installation with `plugin --profile desktop remove dsh-market-radar`. Then reopen DSH. You can export your watchlist and alert rules from Settings before removal.
+
+Run `pnpm install` and `pnpm check`, then use `pnpm dev` to open the simulated host at `http://127.0.0.1:4188`. `pnpm smoke:live`, `pnpm smoke:history` and `pnpm smoke:package` check quotes, history and packaging. `pnpm pack --pack-destination dist` creates a prebuilt package.
+
+[Report an issue](https://github.com/alwayXXX/dsh-market-radar/issues) · [MIT license](https://github.com/alwayXXX/dsh-market-radar/blob/main/LICENSE)

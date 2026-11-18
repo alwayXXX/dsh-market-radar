@@ -1,7 +1,7 @@
 {
   "name": "dsh-market-radar",
   "version": "0.1.4",
-  "description": "黄金、A 股和美股的轻量行情条、自选看板、到价提醒与对话快照。",
+  "description": "DeepSeek Harness 行情插件，查看黄金、A 股、美股行情与价格走势，支持自选、阈值提醒和对话草稿快照。",
   "type": "module",
   "license": "MIT",
   "main": "./lib/index.js",
@@ -12,7 +12,7 @@
   "bugs": { "url": "https://github.com/alwayXXX/dsh-market-radar/issues" },
   "engines": { "node": ">=24.9.0", "dsh": "0.2.2-rc.3" },
   "packageManager": "pnpm@11.22.0",
-  "keywords": ["dsh-plugin", "deepseek-harness", "stocks", "gold", "market", "ticker"],
+  "keywords": ["dsh-plugin", "deepseek-harness", "stocks", "gold", "market-data", "ticker", "watchlist", "price-alerts"],
   "icon": "./assets/icon.svg",
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },
