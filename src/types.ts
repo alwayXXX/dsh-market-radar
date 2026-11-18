@@ -35,6 +35,19 @@ export interface PriceSeries {
   updatedAt: string
   error?: string
 }
+export type MarketEventSource = 'fed' | 'bls' | 'nyfed'
+export interface MarketEvent {
+  title: string
+  at: string
+  url: string
+  source: MarketEventSource
+  kind: 'published' | 'scheduled'
+  cachedUntil?: number
+}
+export interface MarketEventsResult {
+  events: MarketEvent[]
+  unavailable: MarketEventSource[]
+}
 export type AlertKind = 'above' | 'below' | 'move' | 'move_up' | 'move_down'
 export interface AlertRule {
   id: string
@@ -71,6 +84,7 @@ export interface RadarApi {
   candidates(symbol: string): Promise<Instrument[]>
   acknowledgeAlerts(ids: string[]): Promise<RadarSnapshot>
   series(instrumentId: string, range?: ChartRange): Promise<PriceSeries>
+  marketEvents(): Promise<MarketEventsResult>
   refresh(): Promise<RadarSnapshot>
   visibility(clientId: string, open: boolean): Promise<void>
 }

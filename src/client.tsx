@@ -5,7 +5,7 @@ import { PriceChart } from './chart.tsx'
 import { insertSnapshot } from './draft.ts'
 import { formatPercent, formatPrice, quoteTooltip, snapshotText, STATUS_LABEL } from './snapshot.ts'
 import type { InputActions, ClientContext } from './host-types.ts'
-import type { AlertKind, ChartRange, Instrument, Market, PriceSeries, Quote, RadarApi, RadarConfig } from './types.ts'
+import type { AlertKind, ChartRange, Instrument, Market, MarketEvent, MarketEventsResult, PriceSeries, Quote, RadarApi, RadarConfig } from './types.ts'
 import styles from './styles.css'
 
 export const name = 'dsh-market-radar-client'
@@ -141,6 +141,68 @@ function Settings({ radar }: { radar: RadarController }) {
     <div className="mr-source-note"><h3>数据与运行</h3><p>股票报价来自腾讯财经，黄金报价来自新浪财经；历史走势还可能来自 Yahoo Finance 或上海黄金交易所，图表下方标明实际来源。免费数据可能存在延迟或暂时不可用。</p><p>监测在 DSH 运行且电脑保持唤醒时进行。自选和提醒保存在本机当前 profile。</p><p>首版使用常规交易时段判断休市，节假日及临时休市可能显示为“报价已延迟”。</p></div>
   </section>
 }
+const EVENT_SOURCE_LABEL = { fed: '美联储', bls: '美国劳工统计局', nyfed: '纽约联储日历' }
+const CPI_CALENDAR_FALLBACK = 'https://www.newyorkfed.org/research/calendars/nationalecon_cal'
+const EVENT_TIME = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+})
+function scheduleExpiresAt(event: MarketEvent): number { return Math.min(Date.parse(event.at), event.cachedUntil ?? Infinity) }
+
+function MarketEventList({ load }: { load: RadarApi['marketEvents'] }) {
+  const [result, setResult] = useState<MarketEventsResult | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let active = true
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const withoutElapsedSchedule = (value: MarketEventsResult, now: number): MarketEventsResult => ({
+      ...value, events: value.events.filter(event => event.kind !== 'scheduled' || scheduleExpiresAt(event) > now),
+    })
+    async function update() {
+      try {
+        const value = await load()
+        if (!active) return
+        const now = Date.now()
+        const current = withoutElapsedSchedule(value, now)
+        setResult(current)
+        const next = current.events.find(event => event.kind === 'scheduled')
+        if (!next) return
+        // Browsers can only schedule a timeout up to about 24.8 days away.
+        const delay = Math.min(scheduleExpiresAt(next) - now, 2_147_483_647)
+        timer = setTimeout(() => {
+          setResult(previous => previous && withoutElapsedSchedule(previous, Date.now()))
+          void update()
+        }, delay)
+      } catch {
+        if (active) setFailed(true)
+      }
+    }
+    void update()
+    return () => { active = false; clearTimeout(timer) }
+  }, [load])
+
+  if (failed) return <p className="mr-event-status" role="status">暂时无法读取市场事件</p>
+  if (!result) return <p className="mr-event-status" role="status">正在读取市场事件…</p>
+  const { events, unavailable } = result
+  return <div className="mr-event-content">
+    {!!events.length && <><p className="mr-event-time-zone">北京时间</p><ul>{events.map(event => <li key={`${event.at}:${event.url}`}>
+      <span className="mr-event-meta">{event.kind === 'scheduled' ? '计划发布' : '已发布'}{event.cachedUntil !== undefined && '（缓存）'} · {EVENT_SOURCE_LABEL[event.source]} · <time dateTime={event.at}>{EVENT_TIME.format(new Date(event.at))}</time></span>
+      <a href={event.url} target="_blank" rel="noopener noreferrer">{event.title}</a>
+    </li>)}</ul></>}
+    {!!unavailable.length && <p className="mr-event-status"><span role="status">{unavailable.map(source => EVENT_SOURCE_LABEL[source]).join('、')}暂时无法读取</span>
+      {unavailable.includes('bls') && <> · <a href={CPI_CALENDAR_FALLBACK} target="_blank" rel="noopener noreferrer">查看纽约联储日历</a></>}
+    </p>}
+    {!events.length && !unavailable.length && <p className="mr-event-status" role="status">暂无可显示的市场事件</p>}
+  </div>
+}
+
+function MarketEventsDisclosure({ load }: { load: RadarApi['marketEvents'] }) {
+  const [expanded, setExpanded] = useState(false)
+  return <details className="mr-market-events" onToggle={event => setExpanded(event.currentTarget.open)}>
+    <summary>市场事件<Icon name="arrow" size={13}/></summary>
+    {expanded && <MarketEventList load={load}/>}
+  </details>
+}
+
 function InstrumentDetail({ radar, instrument, onBack, onRules }: { radar: RadarController; instrument: Instrument; onBack: () => void; onRules: () => void }) {
   const state = useRadar(radar)
   const [series, setSeries] = useState<PriceSeries | null>(null)
@@ -169,6 +231,7 @@ function InstrumentDetail({ radar, instrument, onBack, onRules }: { radar: Radar
     <div className="mr-chart-title"><h4>价格走势</h4><span>{instrument.market === 'us' ? '纽约时间' : '北京时间'}</span></div>
     <div className="mr-chart-ranges" role="group" aria-label="走势时间范围">{([['1d', '1天'], ['5d', '5天'], ['1m', '1月'], ['6m', '半年'], ['ytd', 'YTD'], ['1y', '1年'], ['5y', '5年'], ['max', 'Max']] as const).map(([value, label]) => <button key={value} type="button" title={value === 'ytd' ? '年初至今' : value === 'max' ? '当前接口及请求上限内的历史' : undefined} className={range === value ? 'mr-selected' : ''} aria-pressed={range === value} onClick={() => setRange(value)}>{label}</button>)}</div>
     {series?.instrumentId === instrument.id && series.range === range ? <PriceChart key={`${instrument.id}:${range}`} series={series} instrument={displayInstrument}/> : <div className="mr-chart-empty">{error || '正在读取走势…'}</div>}
+    {instrument.market === 'gold' && <MarketEventsDisclosure load={radar.api.marketEvents}/>}
     <div className="mr-detail-data"><div><span>昨收</span><strong>{formatPrice(quote?.previousClose ?? undefined)}</strong></div><div><span>涨跌额</span><strong>{quote?.change == null ? '—' : `${quote.change >= 0 ? '+' : ''}${formatPrice(quote.change)}`}</strong></div><div><span>来源</span><strong>{quote?.source ?? '—'}</strong></div></div>
     <button className="mr-button mr-primary mr-full" disabled={!quote} onClick={() => { if (quote) setPreview(snapshotText([quote])) }}><Icon name="chat"/>准备行情快照</button>
     {preview && <div className="mr-snapshot-preview"><h4>放入对话前预览</h4><pre>{preview}</pre><p className="mr-muted">加入草稿后由你发送，已有文字和附件会保留。</p><div className="mr-button-row"><button className="mr-button" onClick={() => setPreview('')}>取消</button><button className="mr-button mr-primary" disabled={!state.draftReady} onClick={() => {
@@ -247,6 +310,7 @@ export function createRpcApi(ctx: ClientContext, signal: AbortSignal): RadarApi 
   return {
     snapshot: () => call('snapshot'), save: config => call('save', { config }),
     resolve: (market, symbol) => call('resolve', { market, symbol }), candidates: symbol => call('candidates', { symbol }), acknowledgeAlerts: ids => call('acknowledgeAlerts', { ids }), series: (instrumentId, range) => call('series', { instrumentId, range }),
+    marketEvents: () => call('marketEvents'),
     refresh: () => call('refresh'), visibility: (clientId, open) => call('visibility', { clientId, open }),
   }
 }

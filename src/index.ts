@@ -36,6 +36,8 @@ export class MarketRadarService extends TypertRemoteService {
     if (typeof instrumentId !== 'string' || instrumentId.length > 80) throw new Error('标的代码无效')
     return this.engine.series(instrumentId, range)
   }
+  @Remote('marketEvents')
+  marketEvents() { return this.engine.marketEvents() }
   @Remote('refresh')
   refresh() { return this.engine.refresh(true) }
   @Remote('visibility')

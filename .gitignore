@@ -5,7 +5,11 @@ node_modules/
 lib/
 dist/
 /docs/
-/fixture/reference.txt
+/CHANGELOG.md
+/fixture/
+/scripts/dev-server.ts
+/scripts/history-smoke.ts
+/scripts/live-smoke.ts
 *.tgz
 SHA256SUMS.txt
 /assets/screenshot-*

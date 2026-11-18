@@ -155,6 +155,20 @@ body[data-ds-dark-theme] .mr-root[data-colors="green-up"], [data-theme="dark"] .
 .mr-detail-data>div { display:flex; flex-direction:column; gap:5px; }
 .mr-detail-data span { color:var(--mr-muted); font-size:10px; }
 .mr-detail-data strong { font-size:11px; font-weight:550; }
+.mr-market-events { margin:12px 0; border:1px solid var(--mr-line); border-radius:8px; }
+.mr-market-events summary { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:36px; padding:8px 12px; border-radius:7px; list-style:none; cursor:pointer; font-weight:600; }
+.mr-market-events summary::-webkit-details-marker { display:none; }
+.mr-market-events summary:hover { background:var(--mr-soft); }
+.mr-market-events[open] summary svg { transform:rotate(90deg); }
+.mr-event-content { padding:0 12px 8px; }
+.mr-market-events ul { list-style:none; margin:0; padding:0; }
+.mr-market-events li { display:grid; gap:3px; padding:8px 0; border-top:1px solid var(--mr-line); }
+.mr-event-meta, .mr-event-time-zone, .mr-market-events .mr-event-status { color:color-mix(in srgb, var(--mr-text) 60%, var(--mr-muted)); font-size:11px; }
+.mr-market-events .mr-event-time-zone { margin:2px 0 6px; }
+.mr-market-events .mr-event-status { margin:0; padding:6px 0; }
+.mr-market-events > .mr-event-status { padding:4px 12px 10px; }
+.mr-market-events a { justify-self:start; color:var(--mr-accent); overflow-wrap:anywhere; text-decoration:underline; text-underline-offset:2px; }
+.mr-market-events a:focus-visible { outline:2px solid var(--mr-accent); outline-offset:2px; }
 .mr-snapshot-preview h4 { font-size:11px; margin-bottom:10px; }
 .mr-snapshot-preview pre { white-space:pre-wrap; word-break:break-word; font:10px/1.8 inherit; color:var(--mr-muted); max-height:180px; overflow:auto; }
 @media(max-width:760px) { .mr-ticker:nth-child(3) { display:none; } .mr-ticker { gap:5px; padding:0 7px!important; } .mr-brand-button>span { display:none; } }

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { AlertEngine } from './alerts.ts'
 import { defaultConfig, instrumentFor, validateConfig } from './config.ts'
 import { quoteStatus } from './market-time.ts'
+import { MarketEventFeed } from './market-events.ts'
 import { PublicMarketProvider, sampledSeries, sanitizePoints, type MarketProvider } from './providers.ts'
 import type { ConfigStore } from './storage.ts'
 import type { ChartRange, Market, PricePoint, PriceSeries, RadarConfig, RadarSnapshot } from './types.ts'
@@ -15,6 +16,7 @@ export class RadarEngine {
   private failures = new Map<Market, { count: number; next: number }>()
   private timer?: ReturnType<typeof setTimeout>
   private controller = new AbortController()
+  private marketEventFeed = new MarketEventFeed(this.controller.signal)
   private inFlight?: Promise<RadarSnapshot>
   private mutation: Promise<unknown> = Promise.resolve()
   private disposed = false
@@ -74,6 +76,7 @@ export class RadarEngine {
     if (!q) throw new Error('未找到该标的，请核对市场和代码')
     return q.instrument
   }
+  marketEvents() { return this.marketEventFeed.load() }
   async candidates(symbol: string) {
     if (typeof symbol !== 'string' || !/^\d{6}$/.test(symbol)) throw new Error('请输入六位 A 股代码')
     const choices = ['sh', 'sz', 'bj'].map(prefix => instrumentFor('cn', `${prefix}${symbol}`))
