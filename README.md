@@ -6,15 +6,15 @@
 
 ## 安装
 
-已在 **Windows + DeepSeek Harness 0.2.2-rc.3** 验证。安装包要求 Node.js 24.9.0 或更高版本。可从 [GitHub Releases](https://github.com/alwayXXX/dsh-market-radar/releases) 下载预构建的安装包，在桌面端的「插件」页选择本地文件。也可以用桌面端自带的 CLI 从 npm 安装。
+此包的宿主版本范围为 **DSH `>=0.2.1-rc.1 <0.3.0-0`**，要求 Node.js 24.9.0 或更高版本。可从 [GitHub Releases](https://github.com/alwayXXX/dsh-market-radar/releases) 下载适配当前宿主的 `.tgz`，在桌面端的「插件」页选择本地文件。也可以用桌面端自带的 CLI 从 npm 安装兼容的发行版。
 
 使用 CLI 前，请完整退出 DSH（包括托盘）。把示例中的安装目录换成你电脑上的实际路径，执行后重新打开 DSH。
 
 ```powershell
-& '你的安装目录\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add 'dsh-market-radar@0.1.5'
+& '你的安装目录\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add 'dsh-market-radar'
 ```
 
-用 CLI 安装本地包时，把 `dsh-market-radar@0.1.5` 换成下载的 `.tgz` 文件的绝对路径。
+用 CLI 安装本地包时，把 `dsh-market-radar` 换成下载的 `.tgz` 文件的绝对路径。指定 npm 版本时，在包名后加 `@版本号`。
 
 ## 使用
 
@@ -59,7 +59,7 @@ DSH 获得焦点时，按 **Ctrl+Shift+F9**（Windows）或 **Command+Shift+F9**
 
 DSH Market Radar brings gold, China A-share and US quotes to the DeepSeek Harness desktop app. Pin up to three symbols to the bottom ticker, open charts from 1 day to Max, set price or percent-change alerts, and insert quote snapshots into an editable chat draft. Expand **市场事件** below the XAU or Au99.99 chart for recent Federal Reserve policy announcements and the next scheduled US CPI release (Beijing time).
 
-**Install.** Verified on Windows with DeepSeek Harness 0.2.2-rc.3. The package requires Node.js 24.9.0 or later. Download the `.tgz` from [GitHub Releases](https://github.com/alwayXXX/dsh-market-radar/releases) and select it in the desktop Plugins page. To use the bundled CLI, quit DSH completely and run the command in the installation section above with your actual DSH installation path. Reopen DSH after installing. To uninstall, use the Plugins page or run `plugin --profile desktop remove dsh-market-radar` with the same CLI.
+**Install.** This package requires DSH `>=0.2.1-rc.1 <0.3.0-0` and Node.js 24.9.0 or later. Select a compatible `.tgz` from [GitHub Releases](https://github.com/alwayXXX/dsh-market-radar/releases) in the desktop Plugins page. To use the bundled CLI, quit DSH completely and run the command in the installation section above with your actual DSH installation path. Reopen DSH after installing. To uninstall, use the Plugins page or run `plugin --profile desktop remove dsh-market-radar` with the same CLI.
 
 **Use.** Open the panel from the bottom ticker or, when its slot is occupied, from the top right. Use `+` to add symbols such as `sh600519` or `VOO`. Alerts establish a baseline on the first valid quote and fire on a subsequent threshold crossing. Press **Ctrl+Shift+F9** on Windows or **Command+Shift+F9** on macOS to hide the panel and mute alerts. Press it again to restore the panel.
 
