@@ -35,13 +35,15 @@ export interface PriceSeries {
   updatedAt: string
   error?: string
 }
-export type MarketEventSource = 'fed' | 'bls' | 'nyfed'
+export type MarketEventSource = 'fed' | 'bls' | 'nyfed' | 'nbs'
+export type MarketEventPreviewKind = 'ai' | 'schedule' | 'original'
 export interface MarketEvent {
   title: string
   at: string
   url: string
   source: MarketEventSource
   kind: 'published' | 'scheduled'
+  preview: MarketEventPreviewKind
   cachedUntil?: number
 }
 export interface MarketEventsResult {
@@ -57,7 +59,8 @@ export interface MarketEventPreview {
 }
 export interface MarketImpacts {
   gold: MarketImpact
-  usStocks: MarketImpact
+  usStocks?: MarketImpact
+  cnStocks?: MarketImpact
 }
 export interface MarketImpact {
   direction: 'positive' | 'negative' | 'mixed' | 'uncertain'
@@ -112,8 +115,8 @@ export interface RadarApi {
   candidates(symbol: string): Promise<Instrument[]>
   acknowledgeAlerts(ids: string[]): Promise<RadarSnapshot>
   series(instrumentId: string, range?: ChartRange): Promise<PriceSeries>
-  marketEvents(): Promise<MarketEventsResult>
-  marketEventPreview(url: string): Promise<MarketEventPreview>
+  marketEvents(market: Market): Promise<MarketEventsResult>
+  marketEventPreview(market: Market, url: string): Promise<MarketEventPreview>
   economicIndicators(): Promise<EconomicIndicatorsResult>
   economicIndicatorPreview(id: EconomicIndicatorId, fetchedAt: string): Promise<MarketEventPreview>
   refresh(): Promise<RadarSnapshot>

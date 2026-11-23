@@ -189,6 +189,7 @@ body[data-ds-dark-theme] .mr-root[data-colors="green-up"], [data-theme="dark"] .
 .mr-market-events li { display:grid; gap:3px; padding:8px 0; border-top:1px solid var(--mr-line); }
 .mr-event-title { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; width:100%; padding:3px 0; border:0; background:transparent; color:var(--mr-text); text-align:left; cursor:pointer; font:inherit; }
 .mr-event-title:hover { color:var(--mr-accent); }
+.mr-event-title-static, .mr-event-title-static:hover { color:var(--mr-text); cursor:default; }
 .mr-event-title svg { flex:none; margin-top:3px; }
 .mr-event-title[aria-expanded="true"] svg { transform:rotate(90deg); }
 .mr-event-preview { display:grid; gap:10px; padding:12px; margin:5px 0; background:var(--mr-soft); border:1px solid var(--mr-line); border-radius:7px; }

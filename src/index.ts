@@ -38,9 +38,9 @@ export class MarketRadarService extends TypertRemoteService {
     return this.engine.series(instrumentId, range)
   }
   @Remote('marketEvents')
-  marketEvents() { return this.engine.marketEvents() }
+  marketEvents(market: Market) { return this.engine.marketEvents(market) }
   @Remote('marketEventPreview')
-  marketEventPreview(url: string) { return this.engine.marketEventPreview(url) }
+  marketEventPreview(market: Market, url: string) { return this.engine.marketEventPreview(market, url) }
   @Remote('economicIndicators')
   economicIndicators() { return this.engine.economicIndicators() }
   @Remote('economicIndicatorPreview')

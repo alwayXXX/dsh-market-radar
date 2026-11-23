@@ -80,8 +80,14 @@ export class RadarEngine {
     if (!q) throw new Error('未找到该标的，请核对市场和代码')
     return q.instrument
   }
-  marketEvents() { return this.marketEventFeed.load() }
-  marketEventPreview(url: string) { return this.eventPreviewer.preview(url) }
+  marketEvents(market: Market) {
+    if (market !== 'gold' && market !== 'cn' && market !== 'us') throw new Error('无效的市场')
+    return this.marketEventFeed.load(market === 'cn' ? 'cn' : 'us')
+  }
+  marketEventPreview(market: Market, url: string) {
+    if (market !== 'gold' && market !== 'cn' && market !== 'us') throw new Error('无效的市场')
+    return this.eventPreviewer.preview(market === 'cn' ? 'cn' : 'us', url)
+  }
   economicIndicators() { return this.economicFeed.load() }
   async economicIndicatorPreview(id: EconomicIndicatorId, fetchedAt: string) {
     if (id !== 'payroll' && id !== 'cpi') throw new Error('经济指标无效')
