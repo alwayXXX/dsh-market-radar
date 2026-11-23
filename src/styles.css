@@ -45,6 +45,7 @@ body[data-ds-dark-theme] .mr-root[data-colors="green-up"], [data-theme="dark"] .
 .mr-nav-count { min-width:14px; font-size:9px; text-align:center; background:var(--mr-soft); border-radius:4px; }
 .mr-panel-scroll { flex:1; min-height:0; overflow:auto; scrollbar-width:thin; scrollbar-color:var(--mr-line) transparent; overscroll-behavior:contain; }
 .mr-list-toolbar { display:flex; align-items:center; justify-content:space-between; padding:17px 18px 12px; }
+.mr-group-snapshot { padding:12px 18px; }
 .mr-market-tabs { display:flex; gap:3px; padding:3px; border-radius:7px; background:var(--mr-soft); }
 .mr-market-tabs button { padding:4px 12px; font-size:11px; color:var(--mr-muted); }
 .mr-market-tabs button.mr-selected { background:var(--mr-bg); box-shadow:0 1px 3px #00000009; color:var(--mr-text); font-weight:550; }

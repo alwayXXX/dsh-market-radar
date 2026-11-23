@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@deepseek-ai/dsh-typert-protocol':
-        specifier: 0.2.2-rc.3
+        specifier: '>=0.2.1-rc.1 <0.2.2-0 || >=0.2.2-rc.1 <0.3.0-0'
         version: 0.2.2-rc.3(@deepseek-ai/cordis@4.1.0)
     devDependencies:
       '@deepseek-ai/cordis':

@@ -203,6 +203,14 @@ function MarketEventsDisclosure({ load }: { load: RadarApi['marketEvents'] }) {
   </details>
 }
 
+function SnapshotPreview({ radar, preview, onClose }: { radar: RadarController; preview: string; onClose: () => void }) {
+  const state = useRadar(radar)
+  return <div className="mr-snapshot-preview"><h4>放入对话前预览</h4><pre>{preview}</pre><p className="mr-muted">加入草稿后由你发送，已有文字和附件会保留。</p><div className="mr-button-row"><button className="mr-button" onClick={onClose}>取消</button><button className="mr-button mr-primary" disabled={!state.draftReady} onClick={() => {
+    if (radar.insertDraft(preview)) { onClose(); radar.notify('已放入当前对话草稿') }
+    else radar.patch({ error: '当前对话暂不能编辑，请返回对话后重试。' })
+  }}>放入对话</button></div>{!state.draftReady && <p className="mr-muted">请先打开一个可编辑的 DSH 对话。</p>}</div>
+}
+
 function InstrumentDetail({ radar, instrument, onBack, onRules }: { radar: RadarController; instrument: Instrument; onBack: () => void; onRules: () => void }) {
   const state = useRadar(radar)
   const [series, setSeries] = useState<PriceSeries | null>(null)
@@ -234,10 +242,7 @@ function InstrumentDetail({ radar, instrument, onBack, onRules }: { radar: Radar
     {instrument.market === 'gold' && <MarketEventsDisclosure load={radar.api.marketEvents}/>}
     <div className="mr-detail-data"><div><span>昨收</span><strong>{formatPrice(quote?.previousClose ?? undefined)}</strong></div><div><span>涨跌额</span><strong>{quote?.change == null ? '—' : `${quote.change >= 0 ? '+' : ''}${formatPrice(quote.change)}`}</strong></div><div><span>来源</span><strong>{quote?.source ?? '—'}</strong></div></div>
     <button className="mr-button mr-primary mr-full" disabled={!quote} onClick={() => { if (quote) setPreview(snapshotText([quote])) }}><Icon name="chat"/>准备行情快照</button>
-    {preview && <div className="mr-snapshot-preview"><h4>放入对话前预览</h4><pre>{preview}</pre><p className="mr-muted">加入草稿后由你发送，已有文字和附件会保留。</p><div className="mr-button-row"><button className="mr-button" onClick={() => setPreview('')}>取消</button><button className="mr-button mr-primary" disabled={!state.draftReady} onClick={() => {
-      if (radar.insertDraft(preview)) { setPreview(''); radar.notify('已放入当前对话草稿') }
-      else radar.patch({ error: '当前对话暂不能编辑，请返回对话后重试。' })
-    }}>放入对话</button></div>{!state.draftReady && <p className="mr-muted">请先打开一个可编辑的 DSH 对话。</p>}</div>}
+    {preview && <SnapshotPreview radar={radar} preview={preview} onClose={() => setPreview('')}/>}
   </section>
 }
 function Dashboard({ radar }: { radar: RadarController }) {
@@ -245,6 +250,7 @@ function Dashboard({ radar }: { radar: RadarController }) {
   const [tab, setTab] = useState<'all' | Market>('all')
   const [page, setPage] = useState<'list' | 'add' | 'rules' | 'settings'>('list')
   const [selected, setSelected] = useState<string | null>(null)
+  const [preview, setPreview] = useState('')
   const panel = useRef<HTMLElement>(null)
   const rulesFor = useRef<string | undefined>(undefined)
   useEffect(() => {
@@ -288,6 +294,7 @@ function Dashboard({ radar }: { radar: RadarController }) {
             }}/><details className="mr-row-menu"><summary aria-label={`管理 ${i.name}`}>···</summary><div><button disabled={state.busy || config.instruments[0]?.id === i.id} onClick={() => { void radar.save(c => { const at = c.instruments.findIndex(v => v.id === i.id); [c.instruments[at - 1], c.instruments[at]] = [c.instruments[at], c.instruments[at - 1]] }).catch(() => {}) }}>上移</button><button disabled={state.busy || config.instruments.at(-1)?.id === i.id} onClick={() => { void radar.save(c => { const at = c.instruments.findIndex(v => v.id === i.id); [c.instruments[at], c.instruments[at + 1]] = [c.instruments[at + 1], c.instruments[at]] }).catch(() => {}) }}>下移</button><button onClick={() => { rulesFor.current = i.id; setPage('rules') }}>设置提醒</button><button className="mr-danger-text" disabled={state.busy} onClick={() => { void radar.save(c => { c.instruments = c.instruments.filter(v => v.id !== i.id); c.pinned = c.pinned.filter(id => id !== i.id); c.alerts = c.alerts.filter(a => a.instrumentId !== i.id) }).catch(() => {}) }}>移出自选</button></div></details></div>
           })}</div>
           {!list.length && <div className="mr-empty"><Icon size={30}/><h3>这里还没有自选</h3><p>添加你关注的标的，价格就在手边。</p><button className="mr-button mr-primary" onClick={() => setPage('add')}><Icon name="plus"/>添加自选</button></div>}
+          <div className="mr-group-snapshot"><button className="mr-button mr-full" disabled={!state.connected || !config.pinned.length || config.pinned.some(id => !state.snapshot.quotes[id] || state.snapshot.errors?.[id])} onClick={() => setPreview(snapshotText(config.pinned.map(id => state.snapshot.quotes[id])))}><Icon name="chat"/>准备重点自选快照</button>{!config.pinned.length ? <p className="mr-muted">固定自选到底部行情条后可生成快照。</p> : (!state.connected || config.pinned.some(id => !state.snapshot.quotes[id] || state.snapshot.errors?.[id])) && <p className="mr-muted">等待所有重点自选的报价连接后生成快照。</p>}{preview && <SnapshotPreview radar={radar} preview={preview} onClose={() => setPreview('')}/>}</div>
           <button className="mr-add-row" onClick={() => setPage('add')}><Icon name="plus"/>添加自选标的</button>
           <div className="mr-list-tip"><Icon name="pin" size={13}/><span>固定最多三只到行情条，点击任意标的查看走势。</span></div>
           {state.snapshot.alerts[0] && <button className="mr-latest-alert" onClick={() => { rulesFor.current = undefined; setPage('rules') }}><Icon name="bell"/><span>{state.snapshot.alerts[0].text}</span><Icon name="arrow"/></button>}

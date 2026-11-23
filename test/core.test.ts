@@ -181,6 +181,18 @@ test('snapshot carries source and timestamp and does not turn unavailable change
   const text = snapshotText([{ ...quote(101), changePercent: null, status: 'delayed' }])
   assert.match(text, /来源：test/); assert.match(text, /源站时间/); assert.match(text, /涨跌幅：未知/); assert.match(text, /报价已延迟/)
 })
+test('a multi-instrument snapshot preserves the order, units, source and status of each quote', () => {
+  const text = snapshotText([
+    { ...quote(101, now, gold), source: '新浪财经', status: 'live' },
+    { ...quote(99, now, us), source: '腾讯财经', status: 'delayed' },
+  ])
+  assert.ok(text.indexOf(gold.symbol) < text.indexOf(us.symbol))
+  assert.match(text, /101 USD\/盎司/)
+  assert.match(text, /99 USD\/股/)
+  assert.match(text, /来源：新浪财经/)
+  assert.match(text, /来源：腾讯财经/)
+  assert.match(text, /报价已延迟/)
+})
 test('ticker tooltip identifies the source, market timezone and missing data', () => {
   const value = quoteTooltip('茅台', { ...quote(101), source: '腾讯财经', status: 'delayed' })
   assert.match(value, /报价已延迟/); assert.match(value, /来源：腾讯财经/); assert.match(value, /2026\/11\/16 10:00:00（北京时间）/)
