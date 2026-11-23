@@ -43,12 +43,13 @@ const context = new Context()
 host.apply(context, { dataDir: join(work, 'data') })
 await context.fiber.dispose()
 const serviceContext = new Context()
-const service = new host.MarketRadarService(serviceContext, { async series(instrumentId, range) { return { instrumentId, range } }, async candidates(symbol) { return [symbol] }, async acknowledgeAlerts(ids) { return ids }, async marketEvents() { return { events: [], unavailable: ['bls'] } }, async economicIndicators() { return { indicators: [], unavailable: ['cpi'] } } })
+const service = new host.MarketRadarService(serviceContext, { async series(instrumentId, range) { return { instrumentId, range } }, async candidates(symbol) { return [symbol] }, async acknowledgeAlerts(ids) { return ids }, async marketEvents() { return { events: [], unavailable: ['bls'] } }, async economicIndicators() { return { indicators: [], unavailable: ['cpi'] } }, async economicIndicatorPreview(id, fetchedAt) { return { id, fetchedAt } } })
 assert.deepEqual(await service.series('gold:XAU', 'max'), { instrumentId: 'gold:XAU', range: 'max' })
 assert.deepEqual(await service.candidates('000001'), ['000001'])
 assert.deepEqual(await service.acknowledgeAlerts(['event-1']), ['event-1'])
 assert.deepEqual(await service.marketEvents(), { events: [], unavailable: ['bls'] })
 assert.deepEqual(await service.economicIndicators(), { indicators: [], unavailable: ['cpi'] })
+assert.deepEqual(await service.economicIndicatorPreview('payroll', '2026-11-23T00:00:00Z'), { id: 'payroll', fetchedAt: '2026-11-23T00:00:00Z' })
 await serviceContext.fiber.dispose()
 let client
 const styles = new Set(), slots = new Set(), slotComponents = new Map(), listeners = new Set(), commands = new Map(), effects = []
@@ -80,6 +81,10 @@ assert.equal(Object.keys(observedSeriesCall.payload.args).length, 0)
 await adapter.economicIndicators()
 assert.equal(observedSeriesCall.endpoint, 'marketRadar/economicIndicators')
 assert.equal(Object.keys(observedSeriesCall.payload.args).length, 0)
+await adapter.economicIndicatorPreview('payroll', '2026-11-23T00:00:00Z')
+assert.equal(observedSeriesCall.endpoint, 'marketRadar/economicIndicatorPreview')
+assert.equal(observedSeriesCall.payload.args.id, 'payroll')
+assert.equal(observedSeriesCall.payload.args.fetchedAt, '2026-11-23T00:00:00Z')
 client.apply({ effect(fn) { effects.push(fn()) }, shortcuts: { register(command) { commands.set(command.id, command); return () => commands.delete(command.id) } }, slots: { inject(name, fn) { effects.push(fn()) }, register(spec, component) { slots.add(spec.name); slotComponents.set(spec.name, component); return () => slots.delete(spec.name) } }, connection: { rpc: { async call(channel, endpoint, payload) {
   if (endpoint.endsWith('/save')) remoteSnapshot = { ...remoteSnapshot, config: { ...structuredClone(payload.args.config), revision: remoteSnapshot.config.revision + 1 } }
   return { ok: true, value: endpoint.endsWith('/snapshot') || endpoint.endsWith('/save') ? structuredClone(remoteSnapshot) : null }

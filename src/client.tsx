@@ -148,6 +148,15 @@ const EVENT_TIME = new Intl.DateTimeFormat('zh-CN', {
 })
 function scheduleExpiresAt(event: MarketEvent): number { return Math.min(Date.parse(event.at), event.cachedUntil ?? Infinity) }
 
+const IMPACT_LABEL = { positive: '可能利好', negative: '可能利空', mixed: '影响分化', uncertain: '无法判断' }
+function AnalysisPreview({ value, title }: { value: MarketEventPreview; title: string }) {
+  return <div className="mr-event-preview"><div><strong>{title}</strong><p>{value.summary}</p></div><div><strong>市场关注</strong><p>{value.outlook}</p></div>
+    {value.impacts && <div><strong>AI 影响判断</strong><div className="mr-impact-list">{([['黄金', value.impacts.gold], ['美股', value.impacts.usStocks]] as const).map(([name, impact]) => <div key={name}><span className="mr-impact-tag">{name} · {IMPACT_LABEL[impact.direction]}</span><p>{impact.reason}</p></div>)}</div></div>}
+    <div className="mr-event-preview-footer"><span>{value.model ? `AI 生成 · ${value.model} · ${value.coverage}` : '日程说明'}</span></div>
+    {value.model && <p className="mr-ai-warning" role="note">AI 生成，仅供参考，可能有误；市场受多种因素影响，请核实原始信息并谨慎操作，不构成投资建议。</p>}
+  </div>
+}
+
 function MarketEventCard({ event, preview }: { event: MarketEvent; preview: RadarApi['marketEventPreview'] }) {
   const [value, setValue] = useState<MarketEventPreview | null>(null)
   const [loading, setLoading] = useState(false)
@@ -166,7 +175,7 @@ function MarketEventCard({ event, preview }: { event: MarketEvent; preview: Rada
     <button className="mr-event-title" type="button" aria-expanded={!!value} onClick={() => { void openPreview() }}>{event.title}<Icon name="arrow" size={13}/></button>
     {loading && <p className="mr-event-status" role="status">正在生成预览…</p>}
     {error && <p className="mr-event-status" role="alert">{error} <button className="mr-text-button" onClick={() => { void openPreview() }}>重试</button></p>}
-    {value && <div className="mr-event-preview"><div><strong>事件摘要</strong><p>{value.summary}</p></div><div><strong>市场关注</strong><p>{value.outlook}</p></div><div className="mr-event-preview-footer"><span>{value.model ? `AI 生成 · ${value.model} · ${value.coverage}` : '日程说明'}</span></div></div>}
+    {value && <AnalysisPreview value={value} title="事件摘要"/>}
     <a href={event.url} target="_blank" rel="noopener noreferrer">查看原文 ↗</a>
   </li>
 }
@@ -224,12 +233,25 @@ function MarketEventsDisclosure({ load, preview }: { load: RadarApi['marketEvent
 }
 
 const ECONOMIC_LABEL = { payroll: '美国非农就业变化', cpi: '美国 CPI 同比' }
-function EconomicCard({ indicator }: { indicator: EconomicIndicator }) {
+function EconomicCard({ indicator, preview }: { indicator: EconomicIndicator; preview: RadarApi['economicIndicatorPreview'] }) {
+  const [analysis, setAnalysis] = useState<MarketEventPreview | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  async function toggleAnalysis() {
+    if (loading) return
+    if (analysis) { setAnalysis(null); return }
+    setLoading(true); setError('')
+    try { const value = await preview(indicator.id, indicator.fetchedAt); if (mounted.current) setAnalysis(value) }
+    catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : '解读暂不可用') }
+    finally { if (mounted.current) setLoading(false) }
+  }
   const unit = indicator.id === 'payroll' ? '万人' : '%'
   const number = (value: number | null) => value === null ? '暂无' : `${value > 0 ? '+' : ''}${value.toFixed(1)}`
   const max = Math.max(1, ...indicator.history.map(point => Math.abs(point.value ?? 0)))
   const source = indicator.id === 'payroll' ? 'https://www.bls.gov/ces/' : 'https://www.bls.gov/cpi/'
-  return <article className="mr-economic-card">
+  return <article className={`mr-economic-card${analysis ? ' mr-economic-card-expanded' : ''}`}>
     <div className="mr-economic-heading"><strong>{ECONOMIC_LABEL[indicator.id]}</strong><span>{indicator.period}</span></div>
     <div className="mr-economic-body"><div><strong className="mr-economic-value">{number(indicator.value)}</strong>{indicator.value !== null && <span className="mr-economic-unit">{unit}</span>}<p>前值 {number(indicator.previous)}{indicator.previous !== null && unit}</p></div>
       <div className="mr-economic-chart" role="img" aria-label={`最近八个月：${indicator.history.map(point => `${point.period} ${number(point.value)}${point.value === null ? '' : unit}`).join('，')}`}>
@@ -239,10 +261,14 @@ function EconomicCard({ indicator }: { indicator: EconomicIndicator }) {
     </div>
     <p className="mr-economic-note">{indicator.id === 'payroll' ? '季调后月度变化，前值可能修订' : '未季调指数计算，同比基期缺失时显示暂无'}</p>
     <a href={source} target="_blank" rel="noopener noreferrer">美国劳工统计局 ↗</a>
+    <button className="mr-text-button mr-economic-analysis" type="button" disabled={indicator.value === null || loading} aria-expanded={!!analysis} onClick={() => { void toggleAnalysis() }}>{loading ? '正在生成 AI 解读…' : analysis ? '收起 AI 解读' : '生成 AI 解读'}</button>
+    {indicator.value === null && <p className="mr-economic-note">当前数据不足，暂无法生成判断。</p>}
+    {error && <p className="mr-error" role="alert">{error} <button className="mr-text-button" onClick={() => { void toggleAnalysis() }}>重试</button></p>}
+    {analysis && <AnalysisPreview value={analysis} title="数据摘要"/>}
   </article>
 }
 
-function EconomicIndicators({ load }: { load: RadarApi['economicIndicators'] }) {
+function EconomicIndicators({ load, preview }: { load: RadarApi['economicIndicators']; preview: RadarApi['economicIndicatorPreview'] }) {
   const [expanded, setExpanded] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const [result, setResult] = useState<EconomicIndicatorsResult | null>(null)
@@ -256,8 +282,9 @@ function EconomicIndicators({ load }: { load: RadarApi['economicIndicators'] }) 
   }, [expanded, load, attempt])
   return <details className="mr-economics" onToggle={event => setExpanded(event.currentTarget.open)}><summary>经济数据<Icon name="arrow" size={13}/></summary>
     {expanded && <div className="mr-economics-content">
+      <p className="mr-economic-note">点击生成后将数据发送给 DSH 可用模型，可能产生模型用量。</p>
       {!result && !failed && <p className="mr-muted" role="status">正在读取经济数据…</p>}
-      {result && <div className="mr-economic-grid">{result.indicators.map(indicator => <EconomicCard key={indicator.id} indicator={indicator}/>)}</div>}
+      {result && <div className="mr-economic-grid">{result.indicators.map(indicator => <EconomicCard key={`${indicator.id}:${indicator.fetchedAt}`} indicator={indicator} preview={preview}/>)}</div>}
       {(failed || !!result?.unavailable.length) && <p className="mr-muted" role="status">{failed ? '经济数据暂时不可用' : `${result!.unavailable.map(id => ECONOMIC_LABEL[id]).join('、')}暂时不可用`} <button className="mr-text-button" onClick={() => setAttempt(value => value + 1)}>重试</button></p>}
       {result?.indicators[0] && <p className="mr-economic-updated">数据获取于 {EVENT_TIME.format(new Date(result.indicators[0].fetchedAt))}（北京时间）</p>}
     </div>}
@@ -356,7 +383,7 @@ function Dashboard({ radar }: { radar: RadarController }) {
           })}</div>
           {!list.length && <div className="mr-empty"><Icon size={30}/><h3>这里还没有自选</h3><p>添加你关注的标的，价格就在手边。</p><button className="mr-button mr-primary" onClick={() => setPage('add')}><Icon name="plus"/>添加自选</button></div>}
           <div className="mr-group-snapshot"><button className="mr-button mr-full" disabled={!state.connected || !config.pinned.length || config.pinned.some(id => !state.snapshot.quotes[id] || state.snapshot.errors?.[id])} onClick={() => setPreview(snapshotText(config.pinned.map(id => state.snapshot.quotes[id])))}><Icon name="chat"/>准备重点自选快照</button>{!config.pinned.length ? <p className="mr-muted">固定自选到底部行情条后可生成快照。</p> : (!state.connected || config.pinned.some(id => !state.snapshot.quotes[id] || state.snapshot.errors?.[id])) && <p className="mr-muted">等待所有重点自选的报价连接后生成快照。</p>}{preview && <SnapshotPreview radar={radar} preview={preview} onClose={() => setPreview('')}/>}</div>
-          <EconomicIndicators load={radar.api.economicIndicators}/>
+          <EconomicIndicators load={radar.api.economicIndicators} preview={radar.api.economicIndicatorPreview}/>
           <button className="mr-add-row" onClick={() => setPage('add')}><Icon name="plus"/>添加自选标的</button>
           <div className="mr-list-tip"><Icon name="pin" size={13}/><span>固定最多三只到行情条，点击任意标的查看走势。</span></div>
           {state.snapshot.alerts[0] && <button className="mr-latest-alert" onClick={() => { rulesFor.current = undefined; setPage('rules') }}><Icon name="bell"/><span>{state.snapshot.alerts[0].text}</span><Icon name="arrow"/></button>}
@@ -382,6 +409,7 @@ export function createRpcApi(ctx: ClientContext, signal: AbortSignal): RadarApi 
     marketEvents: () => call('marketEvents'),
     marketEventPreview: url => call('marketEventPreview', { url }),
     economicIndicators: () => call('economicIndicators'),
+    economicIndicatorPreview: (id, fetchedAt) => call('economicIndicatorPreview', { id, fetchedAt }),
     refresh: () => call('refresh'), visibility: (clientId, open) => call('visibility', { clientId, open }),
   }
 }

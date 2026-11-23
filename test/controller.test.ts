@@ -9,7 +9,7 @@ function apiFixture() {
     snapshot: async () => structuredClone(snapshot),
     save: async config => { snapshot = { ...snapshot, config: { ...structuredClone(config), revision: snapshot.config.revision + 1 } }; return structuredClone(snapshot) },
     resolve: async () => { throw new Error('unused') }, candidates: async () => [], acknowledgeAlerts: async () => structuredClone(snapshot), series: async () => { throw new Error('unused') },
-    marketEvents: async () => ({ events: [], unavailable: [] }), marketEventPreview: async () => ({ summary: '', outlook: '' }), economicIndicators: async () => ({ indicators: [], unavailable: [] }), refresh: async () => structuredClone(snapshot), visibility: async () => {},
+    marketEvents: async () => ({ events: [], unavailable: [] }), marketEventPreview: async () => ({ summary: '', outlook: '' }), economicIndicators: async () => ({ indicators: [], unavailable: [] }), economicIndicatorPreview: async () => ({ summary: '', outlook: '' }), refresh: async () => structuredClone(snapshot), visibility: async () => {},
   }
   return { api, read: () => structuredClone(snapshot) }
 }

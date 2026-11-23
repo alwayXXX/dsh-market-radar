@@ -43,7 +43,7 @@ test('event previews use the official article, deduplicate model requests and re
     async *stream(options) {
       modelCalls++
       assert.match(options.messages[0].content[0].text, /maintain the target range/)
-      yield { type: 'text-delta', text: '{"summary":"维持利率区间。","outlook":"黄金方向尚不明确。"}' }
+      yield { type: 'text-delta', text: '{"summary":"维持利率区间。","outlook":"黄金方向尚不明确。","impacts":{"gold":{"direction":"uncertain","reason":"缺少预期差。"},"usStocks":{"direction":"mixed","reason":"取决于预期。"}}}' }
       yield { type: 'finish', reason: { kind: 'stop' } }
     },
   }
@@ -51,6 +51,7 @@ test('event previews use the official article, deduplicate model requests and re
   const [first, second] = await Promise.all([previewer.preview(fedLink), previewer.preview(fedLink)])
   assert.deepEqual(first, second)
   assert.match(first.summary, /维持/)
+  assert.equal(first.impacts?.gold.direction, 'uncertain')
   assert.equal(articleCalls, 1)
   assert.equal(modelCalls, 1)
   await assert.rejects(previewer.preview('https://example.com/'), /事件已更新/)
@@ -58,6 +59,39 @@ test('event previews use the official article, deduplicate model requests and re
   const schedule = await previewer.preview('https://www.bls.gov/schedule/news_release/cpi.htm')
   assert.match(schedule.summary, /尚未公布/)
   assert.equal(modelCalls, 1)
+})
+
+test('economic previews use the supplied official observations, deduplicate requests and reject missing values', async () => {
+  const previewer = new MarketEventPreviewer(new MarketEventFeed(new AbortController().signal), new AbortController().signal)
+  let calls = 0
+  previewer.setLlm({
+    listProviders: () => [{ id: 'test', name: 'Test' }], listModels: async () => [{ id: 'model', name: 'Model' }],
+    async *stream(options) {
+      calls++
+      assert.match(options.messages[0].content[0].text, /最新月份：2026-10/)
+      assert.match(options.messages[0].content[0].text, /最新值：16\.50/)
+      assert.match(options.messages[0].content[0].text, /没有提供市场预期/)
+      yield { type: 'text-delta', text: '{"summary":"非农增加16.5万人。","outlook":"关注预期差。","impacts":{"gold":{"direction":"uncertain","reason":"预期缺失。"},"usStocks":{"direction":"uncertain","reason":"预期缺失。"}}}' }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    },
+  })
+  const indicator = { id: 'payroll' as const, period: '2026-10', value: 16.5, previous: 6, history: [{ period: '2026-10', value: 16.5 }], fetchedAt: '2026-11-23T00:00:00Z' }
+  const [first, second] = await Promise.all([previewer.previewIndicator(indicator), previewer.previewIndicator(indicator)])
+  assert.deepEqual(first, second)
+  assert.equal(first.impacts?.gold.direction, 'uncertain')
+  assert.match(first.coverage!, /不含市场预期/)
+  assert.equal(calls, 1)
+  await assert.rejects(previewer.previewIndicator({ ...indicator, value: null }), /数据不足/)
+  assert.equal(calls, 1)
+})
+
+test('previews reject invalid impact directions instead of presenting unvalidated judgments', async () => {
+  const previewer = new MarketEventPreviewer(new MarketEventFeed(new AbortController().signal), new AbortController().signal)
+  previewer.setLlm({ listProviders: () => [{ id: 'test', name: 'Test' }], listModels: async () => [{ id: 'test', name: 'Test' }], async *stream() {
+    yield { type: 'text-delta', text: '{"summary":"数据","outlook":"关注","impacts":{"gold":{"direction":"guaranteed","reason":"理由"},"usStocks":{"direction":"uncertain","reason":"理由"}}}' }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  } })
+  await assert.rejects(previewer.previewIndicator({ id: 'cpi', period: '2026-10', value: 3, previous: null, history: [], fetchedAt: '2026-11-23T00:00:00Z' }), /生成失败/)
 })
 
 test('event previews report unavailable models and reject malformed model results', async () => {

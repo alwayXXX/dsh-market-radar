@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto'
 import { RadarEngine } from './engine.ts'
 import { FileConfigStore } from './storage.ts'
 import type { EventLlm } from './market-event-preview.ts'
-import type { ChartRange, Market, RadarConfig } from './types.ts'
+import type { ChartRange, EconomicIndicatorId, Market, RadarConfig } from './types.ts'
 
 export const name = 'dsh-market-radar'
 export const inject = ['typertGateway']
@@ -43,6 +43,8 @@ export class MarketRadarService extends TypertRemoteService {
   marketEventPreview(url: string) { return this.engine.marketEventPreview(url) }
   @Remote('economicIndicators')
   economicIndicators() { return this.engine.economicIndicators() }
+  @Remote('economicIndicatorPreview')
+  economicIndicatorPreview(id: EconomicIndicatorId, fetchedAt: string) { return this.engine.economicIndicatorPreview(id, fetchedAt) }
   @Remote('refresh')
   refresh() { return this.engine.refresh(true) }
   @Remote('visibility')

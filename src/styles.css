@@ -53,6 +53,7 @@ body[data-ds-dark-theme] .mr-root[data-colors="green-up"], [data-theme="dark"] .
 .mr-economics-content { padding:0 10px 10px; }
 .mr-economic-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
 .mr-economic-card { padding:10px; border:1px solid var(--mr-line); border-radius:7px; min-width:0; }
+.mr-economic-card-expanded { grid-column:1 / -1; }
 .mr-economic-heading { display:flex; flex-direction:column; gap:3px; }
 .mr-economic-heading strong { font-size:11px; }
 .mr-economic-heading span, .mr-economic-unit, .mr-economic-body p, .mr-economic-note, .mr-economic-updated { color:var(--mr-muted); font-size:10px; }
@@ -194,6 +195,10 @@ body[data-ds-dark-theme] .mr-root[data-colors="green-up"], [data-theme="dark"] .
 .mr-event-preview strong { font-size:11px; color:var(--mr-text); }
 .mr-event-preview p { margin:4px 0 0; line-height:1.6; color:var(--mr-text); font-size:12px; white-space:pre-wrap; }
 .mr-event-preview-footer { display:flex; justify-content:space-between; align-items:center; gap:8px; color:var(--mr-muted); font-size:10px; }
+.mr-impact-list { display:grid; gap:8px; margin-top:6px; }
+.mr-impact-tag { display:inline-block; padding:2px 6px; border:1px solid var(--mr-line); border-radius:4px; color:var(--mr-text); font-size:11px; font-weight:600; }
+.mr-event-preview .mr-ai-warning { margin:0; padding-top:8px; border-top:1px solid var(--mr-line); color:var(--mr-muted); font-size:11px; }
+.mr-economic-analysis { display:block; margin-top:7px; }
 .mr-event-meta, .mr-event-time-zone, .mr-market-events .mr-event-status { color:color-mix(in srgb, var(--mr-text) 60%, var(--mr-muted)); font-size:11px; }
 .mr-market-events .mr-event-time-zone { margin:2px 0 6px; }
 .mr-market-events .mr-event-status { margin:0; padding:6px 0; }

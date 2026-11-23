@@ -51,8 +51,17 @@ export interface MarketEventsResult {
 export interface MarketEventPreview {
   summary: string
   outlook: string
+  impacts?: MarketImpacts
   model?: string
   coverage?: string
+}
+export interface MarketImpacts {
+  gold: MarketImpact
+  usStocks: MarketImpact
+}
+export interface MarketImpact {
+  direction: 'positive' | 'negative' | 'mixed' | 'uncertain'
+  reason: string
 }
 export type EconomicIndicatorId = 'payroll' | 'cpi'
 export interface EconomicIndicator {
@@ -106,6 +115,7 @@ export interface RadarApi {
   marketEvents(): Promise<MarketEventsResult>
   marketEventPreview(url: string): Promise<MarketEventPreview>
   economicIndicators(): Promise<EconomicIndicatorsResult>
+  economicIndicatorPreview(id: EconomicIndicatorId, fetchedAt: string): Promise<MarketEventPreview>
   refresh(): Promise<RadarSnapshot>
   visibility(clientId: string, open: boolean): Promise<void>
 }

@@ -7,7 +7,7 @@ import { MarketEventPreviewer, type EventLlm } from './market-event-preview.ts'
 import { EconomicIndicatorsFeed } from './economic-indicators.ts'
 import { PublicMarketProvider, sampledSeries, sanitizePoints, type MarketProvider } from './providers.ts'
 import type { ConfigStore } from './storage.ts'
-import type { ChartRange, Market, PricePoint, PriceSeries, RadarConfig, RadarSnapshot } from './types.ts'
+import type { ChartRange, EconomicIndicatorId, Market, PricePoint, PriceSeries, RadarConfig, RadarSnapshot } from './types.ts'
 
 export class RadarEngine {
   private state: RadarSnapshot = { config: defaultConfig(), quotes: {}, alerts: [], alertsRevision: 0, alertsEpoch: randomUUID(), errors: {}, updatedAt: new Date(0).toISOString() }
@@ -83,6 +83,14 @@ export class RadarEngine {
   marketEvents() { return this.marketEventFeed.load() }
   marketEventPreview(url: string) { return this.eventPreviewer.preview(url) }
   economicIndicators() { return this.economicFeed.load() }
+  async economicIndicatorPreview(id: EconomicIndicatorId, fetchedAt: string) {
+    if (id !== 'payroll' && id !== 'cpi') throw new Error('经济指标无效')
+    const { indicators } = await this.economicFeed.load()
+    const indicator = indicators.find(item => item.id === id)
+    if (!indicator || indicator.value === null) throw new Error('当前数据不足，暂无法生成判断')
+    if (indicator.fetchedAt !== fetchedAt) throw new Error('数据已更新，请重新打开经济数据后重试')
+    return this.eventPreviewer.previewIndicator(indicator)
+  }
   setEventLlm(llm?: EventLlm) { this.eventPreviewer.setLlm(llm) }
   async candidates(symbol: string) {
     if (typeof symbol !== 'string' || !/^\d{6}$/.test(symbol)) throw new Error('请输入六位 A 股代码')
