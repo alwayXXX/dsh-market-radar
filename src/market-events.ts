@@ -9,15 +9,47 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 const DAY_MS = 86_400_000
 const MAX_FEED_BYTES = 256 * 1024
 
-function rssField(item: string, tag: 'title' | 'link' | 'pubDate'): string {
-  const value = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'i').exec(item)?.[1]?.trim() ?? ''
-  const cdata = /^<!\[CDATA\[([\s\S]*)\]\]>$/.exec(value)
+function decodeEntities(value: string): string {
   const entities: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
-  return (cdata?.[1] ?? value).replace(/&(amp|lt|gt|quot|apos|#\d{1,7}|#x[\da-fA-F]{1,6});/g, (match, entity: string) => {
+  return value.replace(/&(amp|lt|gt|quot|apos|#\d{1,7}|#x[\da-fA-F]{1,6});/g, (match, entity: string) => {
     if (!entity.startsWith('#')) return entities[entity]
     const code = entity.startsWith('#x') ? Number.parseInt(entity.slice(2), 16) : Number(entity.slice(1))
     return code >= 32 && code <= 0x10ffff ? String.fromCodePoint(code) : match
   }).trim()
+}
+
+function rssField(item: string, tag: 'title' | 'link' | 'pubDate'): string {
+  const value = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'i').exec(item)?.[1]?.trim() ?? ''
+  const cdata = /^<!\[CDATA\[([\s\S]*)\]\]>$/.exec(value)
+  return decodeEntities(cdata?.[1] ?? value)
+}
+
+export function parseFedArticle(html: string): string {
+  const article = /<div\b[^>]*\bid=["']article["'][^>]*>[\s\S]*?<div\b[^>]*\bclass=["']col-xs-12 col-sm-8 col-md-8["'][^>]*>([\s\S]*?)<div\b[^>]*\bclass=["']col-xs-12 col-sm-4/i.exec(html)?.[1]
+  if (!article) throw new Error('无法读取公告正文')
+  const clean = article.replace(/<!--[\s\S]*?-->/g, ' ').replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+  const paragraphs = [...clean.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)]
+    .map(match => decodeEntities(match[1].replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ')).replace(/\s+/g, ' ').trim())
+    .filter(text => text.length >= 50 && !/^For release at\b/i.test(text))
+  if (!paragraphs.length) throw new Error('公告正文暂不可读')
+  return paragraphs.join('\n\n').slice(0, 20_000)
+}
+
+export function fedMinutesLink(html: string): string | null {
+  const article = /<div\b[^>]*\bid=["']article["'][^>]*>([\s\S]*?)<div\b[^>]*\bid=["']lastUpdate["']/i.exec(html)?.[1]
+  const path = article && /href=["'](\/monetarypolicy\/fomcminutes\d{8}\.htm)["']/i.exec(article)?.[1]
+  return path ? `https://www.federalreserve.gov${path}` : null
+}
+
+export function parseFedMinutes(html: string): string {
+  const article = /<div\b[^>]*\bid=["']article["'][^>]*>([\s\S]*?)<div\b[^>]*\bid=["']lastUpdate["']/i.exec(html)?.[1]
+  if (!article) throw new Error('无法读取会议纪要正文')
+  const clean = article.replace(/<!--[\s\S]*?-->/g, ' ').replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+  const text = [...clean.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)]
+    .map(match => decodeEntities(match[1].replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ')).replace(/\s+/g, ' ').trim())
+    .filter(value => value.length >= 50).join('\n\n')
+  if (!text) throw new Error('会议纪要正文暂不可读')
+  return text.length > 20_000 ? `${text.slice(0, 9000)}\n\n[中间内容已省略]\n\n${text.slice(-11_000)}` : text
 }
 
 export function parseFedAnnouncements(xml: string): MarketEvent[] {
@@ -69,7 +101,7 @@ function parseNyFedCpi(html: string, year: number, month: number): MarketEvent[]
   return events
 }
 
-async function fetchFeed(fetcher: typeof fetch, url: string, signal: AbortSignal): Promise<string> {
+export async function fetchFeed(fetcher: typeof fetch, url: string, signal: AbortSignal): Promise<string> {
   const response = await fetcher(url, { redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]) })
   if (!response.ok || !response.body) throw new Error('资讯源暂不可用')
   let bytes = 0

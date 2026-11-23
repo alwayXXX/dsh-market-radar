@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { RadarEngine } from './engine.ts'
 import { FileConfigStore } from './storage.ts'
+import type { EventLlm } from './market-event-preview.ts'
 import type { ChartRange, Market, RadarConfig } from './types.ts'
 
 export const name = 'dsh-market-radar'
@@ -38,6 +39,10 @@ export class MarketRadarService extends TypertRemoteService {
   }
   @Remote('marketEvents')
   marketEvents() { return this.engine.marketEvents() }
+  @Remote('marketEventPreview')
+  marketEventPreview(url: string) { return this.engine.marketEventPreview(url) }
+  @Remote('economicIndicators')
+  economicIndicators() { return this.engine.economicIndicators() }
   @Remote('refresh')
   refresh() { return this.engine.refresh(true) }
   @Remote('visibility')
@@ -49,6 +54,10 @@ export class MarketRadarService extends TypertRemoteService {
 export function apply(ctx: Context, config: Config = {}): void {
   const engine = new RadarEngine(new FileConfigStore(join(profileDataDirectory(ctx, config.dataDir), 'config.json')))
   new MarketRadarService(ctx, engine)
+  ctx.inject(['llm'], child => {
+    engine.setEventLlm((child as Context & { llm: EventLlm }).llm)
+    child.effect(() => () => engine.setEventLlm(undefined), 'market event model availability')
+  })
   ctx.effect(() => {
     void engine.start().catch(error => ctx.logger.warn('行情雷达启动失败', error instanceof Error ? error.message : 'unknown'))
     return () => engine.dispose()

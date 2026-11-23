@@ -5,7 +5,7 @@ import { PriceChart } from './chart.tsx'
 import { insertSnapshot } from './draft.ts'
 import { formatPercent, formatPrice, quoteTooltip, snapshotText, STATUS_LABEL } from './snapshot.ts'
 import type { InputActions, ClientContext } from './host-types.ts'
-import type { AlertKind, ChartRange, Instrument, Market, MarketEvent, MarketEventsResult, PriceSeries, Quote, RadarApi, RadarConfig } from './types.ts'
+import type { AlertKind, ChartRange, EconomicIndicator, EconomicIndicatorsResult, Instrument, Market, MarketEvent, MarketEventPreview, MarketEventsResult, PriceSeries, Quote, RadarApi, RadarConfig } from './types.ts'
 import styles from './styles.css'
 
 export const name = 'dsh-market-radar-client'
@@ -148,7 +148,30 @@ const EVENT_TIME = new Intl.DateTimeFormat('zh-CN', {
 })
 function scheduleExpiresAt(event: MarketEvent): number { return Math.min(Date.parse(event.at), event.cachedUntil ?? Infinity) }
 
-function MarketEventList({ load }: { load: RadarApi['marketEvents'] }) {
+function MarketEventCard({ event, preview }: { event: MarketEvent; preview: RadarApi['marketEventPreview'] }) {
+  const [value, setValue] = useState<MarketEventPreview | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  async function openPreview() {
+    if (loading) return
+    if (value) { setValue(null); return }
+    setLoading(true); setError('')
+    try { const result = await preview(event.url); if (mounted.current) setValue(result) }
+    catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : '预览暂不可用') }
+    finally { if (mounted.current) setLoading(false) }
+  }
+  return <li><span className="mr-event-meta">{event.kind === 'scheduled' ? '计划发布' : '已发布'}{event.cachedUntil !== undefined && '（缓存）'} · {EVENT_SOURCE_LABEL[event.source]} · <time dateTime={event.at}>{EVENT_TIME.format(new Date(event.at))}</time></span>
+    <button className="mr-event-title" type="button" aria-expanded={!!value} onClick={() => { void openPreview() }}>{event.title}<Icon name="arrow" size={13}/></button>
+    {loading && <p className="mr-event-status" role="status">正在生成预览…</p>}
+    {error && <p className="mr-event-status" role="alert">{error} <button className="mr-text-button" onClick={() => { void openPreview() }}>重试</button></p>}
+    {value && <div className="mr-event-preview"><div><strong>事件摘要</strong><p>{value.summary}</p></div><div><strong>市场关注</strong><p>{value.outlook}</p></div><div className="mr-event-preview-footer"><span>{value.model ? `AI 生成 · ${value.model} · ${value.coverage}` : '日程说明'}</span></div></div>}
+    <a href={event.url} target="_blank" rel="noopener noreferrer">查看原文 ↗</a>
+  </li>
+}
+
+function MarketEventList({ load, preview }: { load: RadarApi['marketEvents']; preview: RadarApi['marketEventPreview'] }) {
   const [result, setResult] = useState<MarketEventsResult | null>(null)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
@@ -184,10 +207,7 @@ function MarketEventList({ load }: { load: RadarApi['marketEvents'] }) {
   if (!result) return <p className="mr-event-status" role="status">正在读取市场事件…</p>
   const { events, unavailable } = result
   return <div className="mr-event-content">
-    {!!events.length && <><p className="mr-event-time-zone">北京时间</p><ul>{events.map(event => <li key={`${event.at}:${event.url}`}>
-      <span className="mr-event-meta">{event.kind === 'scheduled' ? '计划发布' : '已发布'}{event.cachedUntil !== undefined && '（缓存）'} · {EVENT_SOURCE_LABEL[event.source]} · <time dateTime={event.at}>{EVENT_TIME.format(new Date(event.at))}</time></span>
-      <a href={event.url} target="_blank" rel="noopener noreferrer">{event.title}</a>
-    </li>)}</ul></>}
+    {!!events.length && <><p className="mr-event-time-zone">北京时间 · 点击已发布事件时使用 DSH 模型生成摘要</p><ul>{events.map(event => <MarketEventCard key={`${event.at}:${event.url}`} event={event} preview={preview}/>)}</ul></>}
     {!!unavailable.length && <p className="mr-event-status"><span role="status">{unavailable.map(source => EVENT_SOURCE_LABEL[source]).join('、')}暂时无法读取</span>
       {unavailable.includes('bls') && <> · <a href={CPI_CALENDAR_FALLBACK} target="_blank" rel="noopener noreferrer">查看纽约联储日历</a></>}
     </p>}
@@ -195,11 +215,52 @@ function MarketEventList({ load }: { load: RadarApi['marketEvents'] }) {
   </div>
 }
 
-function MarketEventsDisclosure({ load }: { load: RadarApi['marketEvents'] }) {
+function MarketEventsDisclosure({ load, preview }: { load: RadarApi['marketEvents']; preview: RadarApi['marketEventPreview'] }) {
   const [expanded, setExpanded] = useState(false)
   return <details className="mr-market-events" onToggle={event => setExpanded(event.currentTarget.open)}>
     <summary>市场事件<Icon name="arrow" size={13}/></summary>
-    {expanded && <MarketEventList load={load}/>}
+    {expanded && <MarketEventList load={load} preview={preview}/>}
+  </details>
+}
+
+const ECONOMIC_LABEL = { payroll: '美国非农就业变化', cpi: '美国 CPI 同比' }
+function EconomicCard({ indicator }: { indicator: EconomicIndicator }) {
+  const unit = indicator.id === 'payroll' ? '万人' : '%'
+  const number = (value: number | null) => value === null ? '暂无' : `${value > 0 ? '+' : ''}${value.toFixed(1)}`
+  const max = Math.max(1, ...indicator.history.map(point => Math.abs(point.value ?? 0)))
+  const source = indicator.id === 'payroll' ? 'https://www.bls.gov/ces/' : 'https://www.bls.gov/cpi/'
+  return <article className="mr-economic-card">
+    <div className="mr-economic-heading"><strong>{ECONOMIC_LABEL[indicator.id]}</strong><span>{indicator.period}</span></div>
+    <div className="mr-economic-body"><div><strong className="mr-economic-value">{number(indicator.value)}</strong>{indicator.value !== null && <span className="mr-economic-unit">{unit}</span>}<p>前值 {number(indicator.previous)}{indicator.previous !== null && unit}</p></div>
+      <div className="mr-economic-chart" role="img" aria-label={`最近八个月：${indicator.history.map(point => `${point.period} ${number(point.value)}${point.value === null ? '' : unit}`).join('，')}`}>
+        {indicator.history.map(point => <span className="mr-economic-column" key={point.period} title={`${point.period} ${number(point.value)}${point.value === null ? '' : unit}`}>
+          {point.value !== null && <i style={{ height: `${Math.max(2, Math.abs(point.value) / max * 19)}px`, bottom: point.value >= 0 ? '50%' : undefined, top: point.value < 0 ? '50%' : undefined }}/>}</span>)}
+      </div>
+    </div>
+    <p className="mr-economic-note">{indicator.id === 'payroll' ? '季调后月度变化，前值可能修订' : '未季调指数计算，同比基期缺失时显示暂无'}</p>
+    <a href={source} target="_blank" rel="noopener noreferrer">美国劳工统计局 ↗</a>
+  </article>
+}
+
+function EconomicIndicators({ load }: { load: RadarApi['economicIndicators'] }) {
+  const [expanded, setExpanded] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const [result, setResult] = useState<EconomicIndicatorsResult | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    if (!expanded) return
+    let active = true
+    setResult(null); setFailed(false)
+    void load().then(value => { if (active) setResult(value) }).catch(() => { if (active) setFailed(true) })
+    return () => { active = false }
+  }, [expanded, load, attempt])
+  return <details className="mr-economics" onToggle={event => setExpanded(event.currentTarget.open)}><summary>经济数据<Icon name="arrow" size={13}/></summary>
+    {expanded && <div className="mr-economics-content">
+      {!result && !failed && <p className="mr-muted" role="status">正在读取经济数据…</p>}
+      {result && <div className="mr-economic-grid">{result.indicators.map(indicator => <EconomicCard key={indicator.id} indicator={indicator}/>)}</div>}
+      {(failed || !!result?.unavailable.length) && <p className="mr-muted" role="status">{failed ? '经济数据暂时不可用' : `${result!.unavailable.map(id => ECONOMIC_LABEL[id]).join('、')}暂时不可用`} <button className="mr-text-button" onClick={() => setAttempt(value => value + 1)}>重试</button></p>}
+      {result?.indicators[0] && <p className="mr-economic-updated">数据获取于 {EVENT_TIME.format(new Date(result.indicators[0].fetchedAt))}（北京时间）</p>}
+    </div>}
   </details>
 }
 
@@ -239,7 +300,7 @@ function InstrumentDetail({ radar, instrument, onBack, onRules }: { radar: Radar
     <div className="mr-chart-title"><h4>价格走势</h4><span>{instrument.market === 'us' ? '纽约时间' : '北京时间'}</span></div>
     <div className="mr-chart-ranges" role="group" aria-label="走势时间范围">{([['1d', '1天'], ['5d', '5天'], ['1m', '1月'], ['6m', '半年'], ['ytd', 'YTD'], ['1y', '1年'], ['5y', '5年'], ['max', 'Max']] as const).map(([value, label]) => <button key={value} type="button" title={value === 'ytd' ? '年初至今' : value === 'max' ? '当前接口及请求上限内的历史' : undefined} className={range === value ? 'mr-selected' : ''} aria-pressed={range === value} onClick={() => setRange(value)}>{label}</button>)}</div>
     {series?.instrumentId === instrument.id && series.range === range ? <PriceChart key={`${instrument.id}:${range}`} series={series} instrument={displayInstrument}/> : <div className="mr-chart-empty">{error || '正在读取走势…'}</div>}
-    {instrument.market === 'gold' && <MarketEventsDisclosure load={radar.api.marketEvents}/>}
+    {instrument.market === 'gold' && <MarketEventsDisclosure load={radar.api.marketEvents} preview={radar.api.marketEventPreview}/>}
     <div className="mr-detail-data"><div><span>昨收</span><strong>{formatPrice(quote?.previousClose ?? undefined)}</strong></div><div><span>涨跌额</span><strong>{quote?.change == null ? '—' : `${quote.change >= 0 ? '+' : ''}${formatPrice(quote.change)}`}</strong></div><div><span>来源</span><strong>{quote?.source ?? '—'}</strong></div></div>
     <button className="mr-button mr-primary mr-full" disabled={!quote} onClick={() => { if (quote) setPreview(snapshotText([quote])) }}><Icon name="chat"/>准备行情快照</button>
     {preview && <SnapshotPreview radar={radar} preview={preview} onClose={() => setPreview('')}/>}
@@ -295,6 +356,7 @@ function Dashboard({ radar }: { radar: RadarController }) {
           })}</div>
           {!list.length && <div className="mr-empty"><Icon size={30}/><h3>这里还没有自选</h3><p>添加你关注的标的，价格就在手边。</p><button className="mr-button mr-primary" onClick={() => setPage('add')}><Icon name="plus"/>添加自选</button></div>}
           <div className="mr-group-snapshot"><button className="mr-button mr-full" disabled={!state.connected || !config.pinned.length || config.pinned.some(id => !state.snapshot.quotes[id] || state.snapshot.errors?.[id])} onClick={() => setPreview(snapshotText(config.pinned.map(id => state.snapshot.quotes[id])))}><Icon name="chat"/>准备重点自选快照</button>{!config.pinned.length ? <p className="mr-muted">固定自选到底部行情条后可生成快照。</p> : (!state.connected || config.pinned.some(id => !state.snapshot.quotes[id] || state.snapshot.errors?.[id])) && <p className="mr-muted">等待所有重点自选的报价连接后生成快照。</p>}{preview && <SnapshotPreview radar={radar} preview={preview} onClose={() => setPreview('')}/>}</div>
+          <EconomicIndicators load={radar.api.economicIndicators}/>
           <button className="mr-add-row" onClick={() => setPage('add')}><Icon name="plus"/>添加自选标的</button>
           <div className="mr-list-tip"><Icon name="pin" size={13}/><span>固定最多三只到行情条，点击任意标的查看走势。</span></div>
           {state.snapshot.alerts[0] && <button className="mr-latest-alert" onClick={() => { rulesFor.current = undefined; setPage('rules') }}><Icon name="bell"/><span>{state.snapshot.alerts[0].text}</span><Icon name="arrow"/></button>}
@@ -318,6 +380,8 @@ export function createRpcApi(ctx: ClientContext, signal: AbortSignal): RadarApi 
     snapshot: () => call('snapshot'), save: config => call('save', { config }),
     resolve: (market, symbol) => call('resolve', { market, symbol }), candidates: symbol => call('candidates', { symbol }), acknowledgeAlerts: ids => call('acknowledgeAlerts', { ids }), series: (instrumentId, range) => call('series', { instrumentId, range }),
     marketEvents: () => call('marketEvents'),
+    marketEventPreview: url => call('marketEventPreview', { url }),
+    economicIndicators: () => call('economicIndicators'),
     refresh: () => call('refresh'), visibility: (clientId, open) => call('visibility', { clientId, open }),
   }
 }

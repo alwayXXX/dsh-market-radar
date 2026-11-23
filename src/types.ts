@@ -48,6 +48,25 @@ export interface MarketEventsResult {
   events: MarketEvent[]
   unavailable: MarketEventSource[]
 }
+export interface MarketEventPreview {
+  summary: string
+  outlook: string
+  model?: string
+  coverage?: string
+}
+export type EconomicIndicatorId = 'payroll' | 'cpi'
+export interface EconomicIndicator {
+  id: EconomicIndicatorId
+  period: string
+  value: number | null
+  previous: number | null
+  history: { period: string; value: number | null }[]
+  fetchedAt: string
+}
+export interface EconomicIndicatorsResult {
+  indicators: EconomicIndicator[]
+  unavailable: EconomicIndicatorId[]
+}
 export type AlertKind = 'above' | 'below' | 'move' | 'move_up' | 'move_down'
 export interface AlertRule {
   id: string
@@ -85,6 +104,8 @@ export interface RadarApi {
   acknowledgeAlerts(ids: string[]): Promise<RadarSnapshot>
   series(instrumentId: string, range?: ChartRange): Promise<PriceSeries>
   marketEvents(): Promise<MarketEventsResult>
+  marketEventPreview(url: string): Promise<MarketEventPreview>
+  economicIndicators(): Promise<EconomicIndicatorsResult>
   refresh(): Promise<RadarSnapshot>
   visibility(clientId: string, open: boolean): Promise<void>
 }

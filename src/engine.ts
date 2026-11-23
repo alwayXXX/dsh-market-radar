@@ -3,6 +3,8 @@ import { AlertEngine } from './alerts.ts'
 import { defaultConfig, instrumentFor, validateConfig } from './config.ts'
 import { quoteStatus } from './market-time.ts'
 import { MarketEventFeed } from './market-events.ts'
+import { MarketEventPreviewer, type EventLlm } from './market-event-preview.ts'
+import { EconomicIndicatorsFeed } from './economic-indicators.ts'
 import { PublicMarketProvider, sampledSeries, sanitizePoints, type MarketProvider } from './providers.ts'
 import type { ConfigStore } from './storage.ts'
 import type { ChartRange, Market, PricePoint, PriceSeries, RadarConfig, RadarSnapshot } from './types.ts'
@@ -17,6 +19,8 @@ export class RadarEngine {
   private timer?: ReturnType<typeof setTimeout>
   private controller = new AbortController()
   private marketEventFeed = new MarketEventFeed(this.controller.signal)
+  private eventPreviewer = new MarketEventPreviewer(this.marketEventFeed, this.controller.signal)
+  private economicFeed = new EconomicIndicatorsFeed(this.controller.signal)
   private inFlight?: Promise<RadarSnapshot>
   private mutation: Promise<unknown> = Promise.resolve()
   private disposed = false
@@ -77,6 +81,9 @@ export class RadarEngine {
     return q.instrument
   }
   marketEvents() { return this.marketEventFeed.load() }
+  marketEventPreview(url: string) { return this.eventPreviewer.preview(url) }
+  economicIndicators() { return this.economicFeed.load() }
+  setEventLlm(llm?: EventLlm) { this.eventPreviewer.setLlm(llm) }
   async candidates(symbol: string) {
     if (typeof symbol !== 'string' || !/^\d{6}$/.test(symbol)) throw new Error('请输入六位 A 股代码')
     const choices = ['sh', 'sz', 'bj'].map(prefix => instrumentFor('cn', `${prefix}${symbol}`))
